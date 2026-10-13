@@ -111,6 +111,9 @@ COMMON_HEAD = """
     [data-theme="darkred"] { --bg: #2a0808; --card: #450a0a; --primary: #fca5a5; --accent: #f87171; --border: #7f1d1d; }
     [data-theme="gold"] { --bg: #1c1400; --card: #382700; --primary: #fbbf24; --accent: #f59e0b; --border: #78350f; }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Noto Kufi Arabic', sans-serif; transition: background 0.3s, border-color 0.3s; }
+    
+    .numpad-btn { background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: 24px; font-weight: bold; padding: 15px; border-radius: 12px; cursor: pointer; transition: transform 0.1s; }
+    .numpad-btn:active { background: var(--primary); color: #000; transform: scale(0.95); }
 </style>
 <script>
     window.savedTheme = localStorage.getItem('theme') || 'luxury';
@@ -1044,19 +1047,20 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
         .cat-visual-img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; margin-bottom: 5px; pointer-events: none; }
         .cat-visual-title { font-size: 11px; font-weight: bold; color: #fff; pointer-events: none; }
 
-        .food-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; overflow-y: auto; padding-right: 5px; align-content: start; padding-bottom: 20px; grid-auto-rows: minmax(270px, auto); }
+        .food-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; overflow-y: auto; padding-right: 5px; align-content: start; padding-bottom: 20px; grid-auto-rows: minmax(200px, auto); }
         .f-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
         .f-card:active { transform: scale(0.96); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .f-img { width: 100%; height: 140px; object-fit: cover; border-radius: 10px; margin-bottom: 10px; flex-shrink: 0; pointer-events: none; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
         .f-name { font-size: 14px; font-weight: bold; line-height: 1.3; margin-bottom: 4px; pointer-events: none; }
         .f-price { color: var(--accent); font-weight: bold; font-size: 13px; margin-bottom: 2px; pointer-events: none; }
         
-        .opt-select { flex: 1 1 45%; min-width: 0; background: var(--bg); border: 1px solid var(--border); color: #fff; border-radius: 6px; padding: 5px; font-size: 11px; outline: none; text-overflow: ellipsis; }
-        
         #toastMsg { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--accent); color: #000; padding: 10px 24px; border-radius: 30px; font-size: 14px; font-weight: 700; z-index: 1000; display: none; }
 
         .modal-transfer { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); display: none; align-items: center; justify-content: center; z-index: 2000; padding: 16px; }
         .modal-transfer-box { background: var(--card); border: 2px solid var(--border); border-radius: 14px; padding: 20px; width: 100%; max-width: 360px; color: #fff; text-align: center; }
+        
+        .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 4000; padding: 16px; }
+        .m-box { background: var(--bg); border: 2px solid var(--border); border-radius: 16px; padding: 20px; width: 100%; color: #fff; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body dir="rtl">
@@ -1103,26 +1107,15 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
                 {% for it in items %}
                 {% set c_name = (it.category or '') | replace('ي', 'ی') | trim %}
                 {% set show_fish = ('ماسی' in c_name or 'ماسی' in it.food_name) %}
-                {% set show_r = ('کوڵاو' in c_name or 'پەلەوەر' in c_name or 'کورد' in c_name) %}
-                {% set show_c = ('پەلەوەر' in c_name or 'مریشک' in c_name) %}
-                {% set show_grill = ('برژاو' in c_name) %}
                 
                 <div class="f-card cat-item cat-{{ cat_idx }}" onclick="addF('{{ it.food_name | replace("'", "\\'") }}', {{ it.price }}, '{{ (it.category or '') | replace("'", "\\'") }}', {{ it.id }})">
                     <img src="{{ it.image_path if it.image_path else 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300' }}" class="f-img" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300'">
                     <div class="f-name food-title-disp" data-ku="{{ it.food_name }}" data-ar="{{ it.food_name_ar or it.food_name }}" data-en="{{ it.food_name_en or it.food_name }}">{{ it.food_name }}</div>
                     <div class="f-price">{{ "{:,.0f}".format(it.price) }}</div>
                     
-                    {% if show_r or show_c or show_fish or show_grill %}
-                    <div style="display:flex; gap:4px; width:100%; flex-wrap:wrap; margin-top:auto; padding-top:6px;">
-                        {% if show_fish %}
-                        <div style="display:flex; flex-direction:row; gap:4px; width:100%; flex-wrap:nowrap;">
-                            <input type="number" id="pcs_{{it.id}}" class="opt-select" style="flex:1; min-width:0;" step="1" min="1" value="1" onclick="event.stopPropagation()" placeholder="دانە">
-                            <input type="number" id="w_{{it.id}}" class="opt-select" style="flex:1; min-width:0;" step="0.25" min="0.25" value="1" onclick="event.stopPropagation()" placeholder="کێش">
-                        </div>
-                        {% endif %}
-                        {% if show_r %}<select class="opt-select" id="r_{{it.id}}" onclick="event.stopPropagation()"><option value="">ج. برنج</option><option value="درێژ">درێژ</option><option value="خڕ">خڕ</option><option value="کوردی">کوردی</option></select>{% endif %}
-                        {% if show_c %}<select class="opt-select" id="c_{{it.id}}" onclick="event.stopPropagation()"><option value="">ب. مریشک</option><option value="سینگ">سینگ</option><option value="ڕان">ڕان</option></select>{% endif %}
-                        {% if show_grill %}<select class="opt-select" id="g_{{it.id}}" onclick="event.stopPropagation()"><option value="">قاپەکان</option>{% for i in range(1, 10) %}<option value="قاپی {{ i }}">قاپی {{ i }}</option>{% endfor %}</select>{% endif %}
+                    {% if show_fish %}
+                    <div style="margin-top:auto; padding-top:6px;">
+                        <button style="width:100%; background:var(--accent); color:#000; border:none; padding:8px; border-radius:8px; font-weight:bold; cursor:pointer;" onclick="event.stopPropagation(); openFishCalc('{{ it.food_name | replace("'", "\\'") }}', {{ it.price }}, '{{ (it.category or '') | replace("'", "\\'") }}')">⚖️ کێشکردن (حاسیبە)</button>
                     </div>
                     {% endif %}
                 </div>
@@ -1132,6 +1125,7 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
         </div>
     </div>
 
+    <!-- گواستنەوەی مێز -->
     <div class="modal-transfer" id="transferModal">
         <div class="modal-transfer-box">
             <h3 style="color:var(--primary); margin-bottom:12px;">گواستنەوە بۆ مێزێکی تر</h3>
@@ -1142,6 +1136,84 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
             </select>
             <button type="button" onclick="confirmTransferTable()" style="background:var(--accent); color:#000; padding:10px; border:none; border-radius:8px; font-weight:bold; width:100%;">پشتڕاستکردنەوە</button>
             <button type="button" onclick="closeTransferModal()" style="background:none; border:none; color:#94a3b8; width:100%; margin-top:10px; cursor:pointer;">داخستن</button>
+        </div>
+    </div>
+
+    <!-- مۆدێلی کێشی ماسی (حاسیبە) -->
+    <div class="modal" id="fishCalcModal">
+        <div class="m-box" style="max-width: 320px; text-align: center; margin:auto;">
+            <h3 style="color:var(--primary); margin-bottom:10px;" id="fcTitle">کێشی ماسی</h3>
+            <div id="fcDisplay" style="background:rgba(0,0,0,0.3); border:2px solid var(--border); color:var(--accent); font-size:32px; font-weight:bold; padding:15px; border-radius:12px; margin-bottom:15px; text-align:left;" dir="ltr">0</div>
+            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-bottom:15px;">
+                <button class="numpad-btn" onclick="fcType('1')">1</button>
+                <button class="numpad-btn" onclick="fcType('2')">2</button>
+                <button class="numpad-btn" onclick="fcType('3')">3</button>
+                <button class="numpad-btn" onclick="fcType('4')">4</button>
+                <button class="numpad-btn" onclick="fcType('5')">5</button>
+                <button class="numpad-btn" onclick="fcType('6')">6</button>
+                <button class="numpad-btn" onclick="fcType('7')">7</button>
+                <button class="numpad-btn" onclick="fcType('8')">8</button>
+                <button class="numpad-btn" onclick="fcType('9')">9</button>
+                <button class="numpad-btn" style="color:#ef4444;" onclick="fcType('C')">C</button>
+                <button class="numpad-btn" onclick="fcType('0')">0</button>
+                <button class="numpad-btn" onclick="fcType('.')">.</button>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button style="flex:1; padding:12px; background:var(--border); color:#fff; border:none; border-radius:10px; font-weight:bold; cursor:pointer;" onclick="closeFishCalc()">داخستن</button>
+                <button style="flex:2; padding:12px; background:var(--accent); color:#000; border:none; border-radius:10px; font-weight:bold; font-size:16px; cursor:pointer;" onclick="addFishConfirm()">زیادکردن ➔</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- مۆدێلی تێبینی و هەڵبژاردنەکان (قاپ، برنج، بەشی مریشک) -->
+    <div class="modal" id="noteModal">
+        <div class="m-box" style="max-width: 400px; text-align: center; margin:auto;">
+            <h3 style="color:var(--primary); margin-bottom:15px;" id="nmTitle">هەڵبژاردن و تێبینی</h3>
+            
+            <div id="nmPlateBox" style="display:none; text-align:right; margin-bottom:10px;">
+                <label style="color:#94a3b8; font-size:12px; margin-bottom:4px; display:block;">قاپەکان</label>
+                <select id="nmPlate" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:#fff; outline:none;">
+                    <option value="">هەڵنەبژێردراوە</option>
+                    <option value="قاپی 1">قاپی 1</option>
+                    <option value="قاپی 2">قاپی 2</option>
+                    <option value="قاپی 3">قاپی 3</option>
+                    <option value="قاپی 4">قاپی 4</option>
+                    <option value="قاپی 5">قاپی 5</option>
+                    <option value="قاپی 6">قاپی 6</option>
+                    <option value="قاپی 7">قاپی 7</option>
+                    <option value="قاپی 8">قاپی 8</option>
+                    <option value="قاپی 9">قاپی 9</option>
+                </select>
+            </div>
+            
+            <div id="nmRiceBox" style="display:none; text-align:right; margin-bottom:10px;">
+                <label style="color:#94a3b8; font-size:12px; margin-bottom:4px; display:block;">جۆری برنج</label>
+                <select id="nmRice" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:#fff; outline:none;">
+                    <option value="">هەڵنەبژێردراوە</option>
+                    <option value="درێژ">درێژ</option>
+                    <option value="خڕ">خڕ</option>
+                    <option value="کوردی">کوردی</option>
+                </select>
+            </div>
+            
+            <div id="nmPartBox" style="display:none; text-align:right; margin-bottom:10px;">
+                <label style="color:#94a3b8; font-size:12px; margin-bottom:4px; display:block;">بەشی مریشک</label>
+                <select id="nmPart" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:#fff; outline:none;">
+                    <option value="">هەڵنەبژێردراوە</option>
+                    <option value="سینگ">سینگ</option>
+                    <option value="ڕان">ڕان</option>
+                </select>
+            </div>
+            
+            <div style="text-align:right; margin-bottom:20px;">
+                <label style="color:#94a3b8; font-size:12px; margin-bottom:4px; display:block;">تێبینی تایبەت</label>
+                <input type="text" id="nmNote" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:#fff; outline:none;" placeholder="بۆ نموونە: بێ پیاز، سادە...">
+            </div>
+            
+            <div style="display:flex; gap:10px;">
+                <button style="flex:1; padding:12px; background:var(--border); color:#fff; border:none; border-radius:10px; font-weight:bold; cursor:pointer;" onclick="closeNoteModal()">داخستن</button>
+                <button style="flex:2; padding:12px; background:var(--accent); color:#000; border:none; border-radius:10px; font-weight:bold; font-size:16px; cursor:pointer;" onclick="saveNoteModal()">پاشەکەوت ➔</button>
+            </div>
         </div>
     </div>
 
@@ -1161,36 +1233,92 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
             document.querySelectorAll('.cat-item').forEach(i => { i.style.display = (id==='all' || i.classList.contains(id)) ? 'flex' : 'none'; });
         }
 
-        function addF(n, p, c, id) {
-            let fn = n, pts = [];
-            let isFish = c.includes('ماسی') || n.includes('ماسی');
-            
-            let rel = document.getElementById('r_'+id), cel = document.getElementById('c_'+id), gel = document.getElementById('g_'+id);
-            if(rel && rel.value) pts.push(rel.value);
-            if(cel && cel.value) pts.push(cel.value);
-            if(gel && gel.value) pts.push(gel.value);
-            
-            let pcsEl = document.getElementById('pcs_'+id);
-            if(pcsEl && pcsEl.value && isFish) pts.push(pcsEl.value + ' دانە');
-
-            if(pts.length>0) fn += ` (${pts.join(' - ')})`;
-            
-            let qtyToAdd = 1;
-            let wEl = document.getElementById('w_'+id);
-            if(wEl && wEl.value && isFish) {
-                let w = parseFloat(wEl.value);
-                if(!isNaN(w) && w > 0) qtyToAdd = w;
-            }
-
-            let fd = false;
-            if(!isFish) {
-                for(let i=cart.length-1; i>=0; i--) {
-                    if(cart[i].is_divider) break;
-                    if(cart[i].ku === fn) { cart[i].qty += qtyToAdd; fd=true; break; }
-                }
-            }
-            if(!fd) cart.push({is_divider:false, ku:fn, full_name:fn, price:p, qty:qtyToAdd, cat:c});
+        /* بەشی حاسیبەی ماسی */
+        let fcName = '', fcPrice = 0, fcCat = '', fcVal = '0';
+        function openFishCalc(n, p, c) {
+            fcName = n; fcPrice = p; fcCat = c; fcVal = '0';
+            document.getElementById('fcTitle').innerText = 'کێش: ' + n;
+            document.getElementById('fcDisplay').innerText = fcVal;
+            document.getElementById('fishCalcModal').style.display = 'flex';
+        }
+        function fcType(char) {
+            if(char === 'C') { fcVal = '0'; }
+            else if(char === '.') { if(!fcVal.includes('.')) fcVal += '.'; }
+            else { if(fcVal === '0') fcVal = char; else fcVal += char; }
+            document.getElementById('fcDisplay').innerText = fcVal;
+        }
+        function closeFishCalc() { document.getElementById('fishCalcModal').style.display = 'none'; }
+        function addFishConfirm() {
+            let w = parseFloat(fcVal);
+            if(isNaN(w) || w <= 0) return alert('کێش هەڵەیە');
+            let kName = `${fcName} (${w} کێش)`;
+            cart.push({is_divider:false, base_name: fcName, ku: kName, full_name: kName, price: fcPrice, qty: w, cat: fcCat, note:'', plate:'', rice:'', part:''});
             ren();
+            closeFishCalc();
+        }
+
+        /* بەشی زیادکردنی ئاسایی (بێ هەڵبژاردن لەسەرەتادا) */
+        function addF(n, p, c, id) {
+            let isFish = c.includes('ماسی') || n.includes('ماسی');
+            if(isFish) { openFishCalc(n, p, c); return; }
+
+            let base_name = n;
+            let fd = false;
+            for(let i=cart.length-1; i>=0; i--) {
+                if(cart[i].is_divider) break;
+                // تەنها ئەگەر تەواو وەکو خۆی بێت و هێشتا دەستکاری نەکرابێت
+                if(cart[i].ku === base_name) { cart[i].qty += 1; fd=true; break; }
+            }
+            if(!fd) cart.push({is_divider:false, base_name: base_name, ku: base_name, full_name: base_name, price: p, qty: 1, cat: c, note:'', plate:'', rice:'', part:''});
+            ren();
+        }
+
+        /* بەشی دەستکاری (تێبینی و هەڵبژاردنەکان) */
+        let editIdx = -1;
+        function openNoteModal(idx) {
+            editIdx = idx;
+            let it = cart[idx];
+            document.getElementById('nmTitle').innerText = 'هەڵبژاردن: ' + it.base_name;
+            
+            let cName = (it.cat || '') + ' ' + (it.base_name || '');
+            let isGrill = cName.includes('برژاو') || cName.includes('کەباب') || cName.includes('تکە');
+            let isBoiled = cName.includes('کوڵاو') || cName.includes('کورد');
+            let isChicken = cName.includes('پەلەوەر') || cName.includes('مریشک');
+            
+            document.getElementById('nmPlateBox').style.display = isGrill ? 'block' : 'none';
+            document.getElementById('nmRiceBox').style.display = (isBoiled || isChicken) ? 'block' : 'none';
+            document.getElementById('nmPartBox').style.display = isChicken ? 'block' : 'none';
+            
+            document.getElementById('nmPlate').value = it.plate || '';
+            document.getElementById('nmRice').value = it.rice || '';
+            document.getElementById('nmPart').value = it.part || '';
+            document.getElementById('nmNote').value = it.note || '';
+            
+            document.getElementById('noteModal').style.display = 'flex';
+        }
+        function closeNoteModal() { document.getElementById('noteModal').style.display = 'none'; }
+        function saveNoteModal() {
+            if(editIdx < 0) return;
+            let it = cart[editIdx];
+            it.plate = document.getElementById('nmPlate').value;
+            it.rice = document.getElementById('nmRice').value;
+            it.part = document.getElementById('nmPart').value;
+            it.note = document.getElementById('nmNote').value.trim();
+            
+            let pts = [];
+            if(it.plate) pts.push(it.plate);
+            if(it.rice) pts.push(it.rice);
+            if(it.part) pts.push(it.part);
+            
+            let fn = it.base_name;
+            if(pts.length > 0) fn += ` (${pts.join(' - ')})`;
+            if(it.note) fn += ` (${it.note})`;
+            
+            it.ku = fn;
+            it.full_name = fn;
+            
+            ren();
+            closeNoteModal();
         }
 
         function updQ(idx, d) { 
@@ -1202,18 +1330,9 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
         }
         function delI(idx) { cart.splice(idx, 1); ren(); }
 
-        function editNote(idx) {
-            let note = prompt('تێبینی (بۆ نموونە: بێ پیاز):');
-            if (note && note.trim() !== '') {
-                cart[idx].ku += ' (' + note.trim() + ')';
-                cart[idx].full_name = cart[idx].ku;
-                ren();
-            }
-        }
-
         function addDiv() {
             if(cart.length===0 || (cart[cart.length-1] && cart[cart.length-1].is_divider)) return;
-            cart.push({is_divider:true, ku:'─── قاپی نوێ ───', full_name:'───', price:0, qty:1, cat:''}); ren();
+            cart.push({is_divider:true, base_name:'───', ku:'─── قاپی نوێ ───', full_name:'───', price:0, qty:1, cat:'', note:'', plate:'', rice:'', part:''}); ren();
         }
 
         function ren() {
@@ -1223,16 +1342,18 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
                 if(it.is_divider) {
                     pN++; h += `<div style="background:#8b5cf6; padding:8px; border-radius:6px; font-size:13px; font-weight:bold; display:flex; justify-content:space-between; margin-bottom:5px;"><span>🍽 قاپی ${pN}</span><span onclick="delI(${i})" style="cursor:pointer; background:#ef4444; padding:2px 8px; border-radius:4px; color:#fff;">✕</span></div>`;
                 } else {
-                    if(it.cat==='برژاو' || it.ku.includes('کەباب')) hG = true;
+                    let cName = (it.cat || '') + ' ' + (it.base_name || '');
+                    if(cName.includes('برژاو') || cName.includes('کەباب') || cName.includes('تکە')) hG = true;
+                    
                     tot += it.price * it.qty;
-                    let dName = it[l] || it.ku;
+                    let dName = it.ku; // هەمیشە ناوی تەواوەتی لەگەڵ هەڵبژاردنەکان نیشان بدە
                     
                     h += `<div class="c-row">
                         <div style="flex:1; text-align:right; font-size:13px; font-weight:bold; padding-left:10px;">${dName}</div>
                         <div class="c-ctrl">
                             <span style="color:var(--accent); font-size:12px; font-weight:bold; margin-left:10px;">${(it.price*it.qty).toLocaleString()}</span>
                             <button class="c-btn" style="background:#ef4444; font-size:12px;" onclick="delI(${i})">🗑</button>
-                            <button class="c-btn" style="background:#3b82f6; font-size:12px;" onclick="editNote(${i})">✏</button>
+                            <button class="c-btn" style="background:#3b82f6; font-size:12px;" onclick="openNoteModal(${i})">✏</button>
                             <button class="c-btn" onclick="updQ(${i},-1)">-</button>
                             <span style="width:30px;text-align:center;font-weight:bold;font-size:14px;">${parseFloat(it.qty.toFixed(3))}</span>
                             <button class="c-btn add" onclick="updQ(${i},1)">+</button>
@@ -1273,7 +1394,16 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
         fetch('/get_table_orders/'+encodeURIComponent(tbl)).then(r=>r.json()).then(d=>{
             if(d) {
                 d.forEach(it=>{
-                    let o = {is_divider:it.food_name.includes('───'), ku:it.food_name, full_name:it.food_name, price:parseFloat(it.price), qty:parseFloat(it.quantity), cat:it.category};
+                    let o = {
+                        is_divider:it.food_name.includes('───'), 
+                        base_name: it.food_name, 
+                        ku:it.food_name, 
+                        full_name:it.food_name, 
+                        price:parseFloat(it.price), 
+                        qty:parseFloat(it.quantity), 
+                        cat:it.category,
+                        note:'', plate:'', rice:'', part:''
+                    };
                     cart.push(o); orig.push(JSON.parse(JSON.stringify(o)));
                 });
                 ren();
@@ -1302,15 +1432,13 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
         .c-btn.act { border-color: var(--primary); background: rgba(0,0,0,0.3); color: var(--primary); }
         .cat-visual-img { width: 50px; height: 50px; border-radius: 8px; object-fit: cover; margin-bottom: 5px; }
         
-        .f-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 15px; grid-auto-rows: minmax(300px, auto); }
+        .f-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 15px; grid-auto-rows: minmax(220px, auto); }
         .f-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; display: flex; flex-direction: column; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.15); transition: transform 0.2s, box-shadow 0.2s; }
         .f-img { width: 100%; height: 140px; object-fit: cover; border-radius: 10px; margin-bottom: 10px; flex-shrink: 0; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
         .f-name { font-size: 13px; font-weight: bold; margin-bottom: 4px; }
         .f-price { color: var(--accent); font-weight: bold; font-size: 12px; margin-bottom: 8px; }
         
-        .opt-select { flex: 1 1 45%; min-width: 0; background: var(--bg); border: 1px solid var(--border); color: var(--primary); border-radius: 6px; padding: 5px; font-size: 11px; outline: none; text-overflow: ellipsis; }
-        
-        .stp { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 2px; margin-top: 8px; }
+        .stp { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 2px; margin-top: auto; }
         .s-btn { width: 30px; height: 30px; border: none; border-radius: 6px; background: #334155; color: #fff; font-weight: bold; font-size: 18px; }
         .s-btn.add { background: var(--primary); color: #000; }
         .btm-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card); padding: 15px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; z-index: 200; }
@@ -1371,30 +1499,10 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
             <div class="f-name food-title-disp" data-ku="{{ it.food_name }}" data-ar="{{ it.food_name_ar or it.food_name }}" data-en="{{ it.food_name_en or it.food_name }}">{{ it.food_name }}</div>
             <div class="f-price">{{ "{:,.0f}".format(it.price) }}</div>
             {% if allow_ordering %}
-            {% set c_name = (it.category or '') | replace('ي', 'ی') | trim %}
-            {% set show_fish = ('ماسی' in c_name or 'ماسی' in it.food_name) %}
-            {% set show_r = ('کوڵاو' in c_name or 'پەلەوەر' in c_name or 'کورد' in c_name) %}
-            {% set show_c = ('پەلەوەر' in c_name or 'مریشک' in c_name) %}
-            {% set show_grill = ('برژاو' in c_name) %}
-            
-            {% if show_r or show_c or show_fish or show_grill %}
-                <div style="display:flex; gap:4px; width:100%; flex-wrap:wrap; margin-top:auto; padding-top:6px;">
-                    {% if show_fish %}
-                    <div style="display:flex; flex-direction:row; gap:4px; width:100%; flex-wrap:nowrap;">
-                        <input type="number" id="pcs_{{it.id}}" class="opt-select" style="flex:1; min-width:0;" step="1" min="1" value="1" onclick="event.stopPropagation()" placeholder="دانە">
-                        <input type="number" id="w_{{it.id}}" class="opt-select" style="flex:1; min-width:0;" step="0.25" min="0.25" value="1" onclick="event.stopPropagation()" placeholder="کێش/کیلۆ">
-                    </div>
-                    {% endif %}
-                    {% if show_r %}<select class="opt-select" id="rm_{{it.id}}"><option value="">ج. برنج</option><option value="درێژ">درێژ</option><option value="خڕ">خڕ</option><option value="کوردی">کوردی</option></select>{% endif %}
-                    {% if show_c %}<select class="opt-select" id="cm_{{it.id}}"><option value="">ب. مریشک</option><option value="سینگ">سینگ</option><option value="ڕان">ڕان</option></select>{% endif %}
-                    {% if show_grill %}<select class="opt-select" id="gm_{{it.id}}"><option value="">قاپەکان</option>{% for i in range(1, 10) %}<option value="قاپی {{ i }}">قاپی {{ i }}</option>{% endfor %}</select>{% endif %}
-                </div>
-            {% endif %}
-            
-            <div class="stp" style="margin-top:auto;">
-                <button class="s-btn" onclick="addF('{{ it.food_name | replace("'", "\\'") }}',-1,{{it.price}},'{{it.category}}',{{it.id}})">-</button>
+            <div class="stp">
+                <button class="s-btn" onclick="addF('{{ it.food_name | replace("'", "\\'") }}',-1,{{it.price}},'{{ (it.category or '') | replace("'", "\\'") }}')">-</button>
                 <span style="font-weight:bold; font-size:14px;" data-name="{{it.food_name}}" class="qty-lbl">0</span>
-                <button class="s-btn add" onclick="addF('{{ it.food_name | replace("'", "\\'") }}',1,{{it.price}},'{{it.category}}',{{it.id}})">+</button>
+                <button class="s-btn add" onclick="addF('{{ it.food_name | replace("'", "\\'") }}',1,{{it.price}},'{{ (it.category or '') | replace("'", "\\'") }}')">+</button>
             </div>
             {% endif %}
         </div>
@@ -1426,6 +1534,84 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
         </div>
     </div>
     {% endif %}
+
+    <!-- مۆدێلی کێشی ماسی (حاسیبە) بۆ مۆبایل -->
+    <div class="modal" id="fishCalcModal" style="z-index: 4000; align-items:center;">
+        <div class="m-box" style="max-width: 320px; border-radius:16px; margin:auto; text-align:center;">
+            <h3 style="color:var(--primary); margin-bottom:10px;" id="fcTitle">کێشی ماسی</h3>
+            <div id="fcDisplay" style="background:rgba(0,0,0,0.3); border:2px solid var(--border); color:var(--accent); font-size:32px; font-weight:bold; padding:15px; border-radius:12px; margin-bottom:15px; text-align:left;" dir="ltr">0</div>
+            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-bottom:15px;">
+                <button class="numpad-btn" onclick="fcType('1')">1</button>
+                <button class="numpad-btn" onclick="fcType('2')">2</button>
+                <button class="numpad-btn" onclick="fcType('3')">3</button>
+                <button class="numpad-btn" onclick="fcType('4')">4</button>
+                <button class="numpad-btn" onclick="fcType('5')">5</button>
+                <button class="numpad-btn" onclick="fcType('6')">6</button>
+                <button class="numpad-btn" onclick="fcType('7')">7</button>
+                <button class="numpad-btn" onclick="fcType('8')">8</button>
+                <button class="numpad-btn" onclick="fcType('9')">9</button>
+                <button class="numpad-btn" style="color:#ef4444;" onclick="fcType('C')">C</button>
+                <button class="numpad-btn" onclick="fcType('0')">0</button>
+                <button class="numpad-btn" onclick="fcType('.')">.</button>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button style="flex:1; padding:12px; background:var(--border); color:#fff; border:none; border-radius:10px; font-weight:bold;" onclick="closeFishCalc()">داخستن</button>
+                <button style="flex:2; padding:12px; background:var(--accent); color:#000; border:none; border-radius:10px; font-weight:bold; font-size:16px;" onclick="addFishConfirm()">زیادکردن ➔</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- مۆدێلی تێبینی و هەڵبژاردنەکان بۆ مۆبایل -->
+    <div class="modal" id="noteModal" style="z-index: 4000; align-items:center;">
+        <div class="m-box" style="max-width: 400px; text-align: center; margin:auto; border-radius:16px;">
+            <h3 style="color:var(--primary); margin-bottom:15px;" id="nmTitle">هەڵبژاردن و تێبینی</h3>
+            
+            <div id="nmPlateBox" style="display:none; text-align:right; margin-bottom:10px;">
+                <label style="color:#94a3b8; font-size:12px; margin-bottom:4px; display:block;">قاپەکان</label>
+                <select id="nmPlate" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:#fff; outline:none;">
+                    <option value="">هەڵنەبژێردراوە</option>
+                    <option value="قاپی 1">قاپی 1</option>
+                    <option value="قاپی 2">قاپی 2</option>
+                    <option value="قاپی 3">قاپی 3</option>
+                    <option value="قاپی 4">قاپی 4</option>
+                    <option value="قاپی 5">قاپی 5</option>
+                    <option value="قاپی 6">قاپی 6</option>
+                    <option value="قاپی 7">قاپی 7</option>
+                    <option value="قاپی 8">قاپی 8</option>
+                    <option value="قاپی 9">قاپی 9</option>
+                </select>
+            </div>
+            
+            <div id="nmRiceBox" style="display:none; text-align:right; margin-bottom:10px;">
+                <label style="color:#94a3b8; font-size:12px; margin-bottom:4px; display:block;">جۆری برنج</label>
+                <select id="nmRice" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:#fff; outline:none;">
+                    <option value="">هەڵنەبژێردراوە</option>
+                    <option value="درێژ">درێژ</option>
+                    <option value="خڕ">خڕ</option>
+                    <option value="کوردی">کوردی</option>
+                </select>
+            </div>
+            
+            <div id="nmPartBox" style="display:none; text-align:right; margin-bottom:10px;">
+                <label style="color:#94a3b8; font-size:12px; margin-bottom:4px; display:block;">بەشی مریشک</label>
+                <select id="nmPart" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:#fff; outline:none;">
+                    <option value="">هەڵنەبژێردراوە</option>
+                    <option value="سینگ">سینگ</option>
+                    <option value="ڕان">ڕان</option>
+                </select>
+            </div>
+            
+            <div style="text-align:right; margin-bottom:20px;">
+                <label style="color:#94a3b8; font-size:12px; margin-bottom:4px; display:block;">تێبینی تایبەت</label>
+                <input type="text" id="nmNote" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:#fff; outline:none;" placeholder="بۆ نموونە: بێ پیاز، سادە...">
+            </div>
+            
+            <div style="display:flex; gap:10px;">
+                <button style="flex:1; padding:12px; background:var(--border); color:#fff; border:none; border-radius:10px; font-weight:bold;" onclick="closeNoteModal()">داخستن</button>
+                <button style="flex:2; padding:12px; background:var(--accent); color:#000; border:none; border-radius:10px; font-weight:bold; font-size:16px;" onclick="saveNoteModal()">پاشەکەوت ➔</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         let cart=[], orig=[]; const tbl="{{ table_num }}"; const isW=location.href.includes('/mobile/menu');
@@ -1459,52 +1645,122 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
 
         function fCat(id, btn) {
             document.querySelectorAll('.c-btn').forEach(b=>b.classList.remove('act')); btn.classList.add('act');
-            document.querySelectorAll('.cat-it').forEach(i => { i.style.display = (id==='all' || i.classList.contains(id)) ? 'flex' : 'none'; });
+            document.querySelectorAll('.cat-it').forEach(i => i.style.display = (id==='all' || i.classList.contains(id)) ? 'flex' : 'none');
         }
 
-        function addF(n, d, p, c, id) {
-            let fn = n;
-            let isFish = c.includes('ماسی') || n.includes('ماسی');
-            let rel = document.getElementById('rm_'+id), cel = document.getElementById('cm_'+id), gel = document.getElementById('gm_'+id);
-            let pcsEl = document.getElementById('pcs_'+id);
+        /* حاسیبەی ماسی */
+        let fcName = '', fcPrice = 0, fcCat = '', fcVal = '0';
+        function openFishCalc(n, p, c) {
+            fcName = n; fcPrice = p; fcCat = c; fcVal = '0';
+            document.getElementById('fcTitle').innerText = 'کێش: ' + n;
+            document.getElementById('fcDisplay').innerText = fcVal;
+            document.getElementById('fishCalcModal').style.display = 'flex';
+        }
+        function fcType(char) {
+            if(char === 'C') { fcVal = '0'; }
+            else if(char === '.') { if(!fcVal.includes('.')) fcVal += '.'; }
+            else { if(fcVal === '0') fcVal = char; else fcVal += char; }
+            document.getElementById('fcDisplay').innerText = fcVal;
+        }
+        function closeFishCalc() { document.getElementById('fishCalcModal').style.display = 'none'; }
+        function addFishConfirm() {
+            let w = parseFloat(fcVal);
+            if(isNaN(w) || w <= 0) return alert('کێش هەڵەیە');
+            let kName = `${fcName} (${w} کێش)`;
+            cart.push({is_divider:false, base_name: fcName, ku: kName, full_name: kName, price: fcPrice, qty: w, cat: fcCat, note:'', plate:'', rice:'', part:''});
+            ren();
+            closeFishCalc();
+        }
+
+        /* بەشی تێبینی مۆدێل */
+        let editIdx = -1;
+        function openNoteModal(idx) {
+            editIdx = idx;
+            let it = cart[idx];
+            document.getElementById('nmTitle').innerText = 'هەڵبژاردن: ' + it.base_name;
+            
+            let cName = (it.cat || '') + ' ' + (it.base_name || '');
+            let isGrill = cName.includes('برژاو') || cName.includes('کەباب') || cName.includes('تکە');
+            let isBoiled = cName.includes('کوڵاو') || cName.includes('کورد');
+            let isChicken = cName.includes('پەلەوەر') || cName.includes('مریشک');
+            
+            document.getElementById('nmPlateBox').style.display = isGrill ? 'block' : 'none';
+            document.getElementById('nmRiceBox').style.display = (isBoiled || isChicken) ? 'block' : 'none';
+            document.getElementById('nmPartBox').style.display = isChicken ? 'block' : 'none';
+            
+            document.getElementById('nmPlate').value = it.plate || '';
+            document.getElementById('nmRice').value = it.rice || '';
+            document.getElementById('nmPart').value = it.part || '';
+            document.getElementById('nmNote').value = it.note || '';
+            
+            document.getElementById('noteModal').style.display = 'flex';
+        }
+        function closeNoteModal() { document.getElementById('noteModal').style.display = 'none'; }
+        function saveNoteModal() {
+            if(editIdx < 0) return;
+            let it = cart[editIdx];
+            it.plate = document.getElementById('nmPlate').value;
+            it.rice = document.getElementById('nmRice').value;
+            it.part = document.getElementById('nmPart').value;
+            it.note = document.getElementById('nmNote').value.trim();
             
             let pts = [];
-            if(rel && rel.value) pts.push(rel.value);
-            if(cel && cel.value) pts.push(cel.value);
-            if(gel && gel.value) pts.push(gel.value);
-            if(pcsEl && pcsEl.value && isFish) pts.push(pcsEl.value + ' دانە');
+            if(it.plate) pts.push(it.plate);
+            if(it.rice) pts.push(it.rice);
+            if(it.part) pts.push(it.part);
             
-            if(pts.length>0) fn += ` (${pts.join(' - ')})`;
+            let fn = it.base_name;
+            if(pts.length > 0) fn += ` (${pts.join(' - ')})`;
+            if(it.note) fn += ` (${it.note})`;
             
-            let qtyToAdd = d;
-            let wEl = document.getElementById('w_'+id);
-            if(wEl && wEl.value && isFish) {
-                let w = parseFloat(wEl.value);
-                if(!isNaN(w) && w > 0) {
-                    qtyToAdd = d > 0 ? w : -w;
-                }
-            }
+            it.ku = fn;
+            it.full_name = fn;
+            
+            ren();
+            closeNoteModal();
+        }
 
-            let oQ = orig.find(o=>o.ku===fn && !o.is_divider); oQ = oQ?oQ.qty:0;
-            let f = false;
+        /* زیادکردنی مۆبایل */
+        function addF(n, d, p, c) {
+            let isFish = c.includes('ماسی') || n.includes('ماسی');
+            if (isFish) {
+                if(d > 0) { openFishCalc(n, p, c); }
+                else { alert('بۆ کەمکردنەوەی کێشی ماسی، لەناو سەبەتە دەستکاری بکە یان بیسڕەوە.'); }
+                return;
+            }
             
-            if(!isFish) {
+            let base_name = n;
+            let oQ = orig.find(o=>o.ku===base_name && !o.is_divider); oQ = oQ?oQ.qty:0;
+            
+            if(d < 0) {
                 for(let i=cart.length-1; i>=0; i--) {
-                    if(cart[i].is_divider) break;
-                    if(cart[i].ku === fn) {
-                        let nQ = cart[i].qty + qtyToAdd;
+                    if(!cart[i].is_divider && cart[i].base_name === base_name) {
+                        let nQ = cart[i].qty + d;
                         if(!isW && nQ < oQ) return alert("ناتوانیت داواکاری پێشوو کەم بکەیتەوە!");
                         cart[i].qty = nQ;
-                        if(cart[i].qty<=0) cart.splice(i,1);
-                        f=true; break;
+                        if(cart[i].qty <= 0) cart.splice(i, 1);
+                        ren();
+                        return;
                     }
                 }
+                return; 
             }
-            
-            if(!f && qtyToAdd > 0) {
-                cart.push({is_divider:false, ku:fn, full_name:fn, price:p, qty:qtyToAdd, cat:c});
+
+            if(d > 0) {
+                let f = false;
+                for(let i=cart.length-1; i>=0; i--) {
+                    if(cart[i].is_divider) break;
+                    // تەنها بۆ دانە تەواوەکان کە هیچ دەستکاریەکیان نییە
+                    if(cart[i].ku === base_name) {
+                        cart[i].qty += d;
+                        f = true; break;
+                    }
+                }
+                if(!f) {
+                    cart.push({is_divider:false, base_name: base_name, ku:base_name, full_name:base_name, price:p, qty:d, cat:c, note:'', plate:'', rice:'', part:''});
+                }
+                ren();
             }
-            ren();
         }
 
         function updQ(i, d) {
@@ -1518,18 +1774,9 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
 
         function delI(i) { cart.splice(i, 1); ren(); }
         
-        function edtM(i) { 
-            let n=prompt('تێبینی (بۆ نموونە: بێ پیاز):'); 
-            if(n && n.trim() !== '') {
-                cart[i].ku += ` (${n.trim()})`;
-                cart[i].full_name = cart[i].ku; 
-                ren();
-            } 
-        }
-
         function addDivM() { 
             if(cart.length===0 || (cart[cart.length-1] && cart[cart.length-1].is_divider)) return; 
-            cart.push({is_divider:true, ku:'─── قاپی نوێ ───', full_name:'───', price:0, qty:1, cat:''}); 
+            cart.push({is_divider:true, base_name:'───', ku:'─── قاپی نوێ ───', full_name:'───', price:0, qty:1, cat:'', note:'', plate:'', rice:'', part:''}); 
             ren(); 
         }
 
@@ -1540,15 +1787,18 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
                 if(it.is_divider) {
                     pN++; h += `<div style="background:#8b5cf6; color:#fff; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:bold; display:flex; justify-content:space-between; margin-bottom:5px;"><span>🍽 قاپی ${pN}</span><span onclick="delI(${i})" style="cursor:pointer; background:#ef4444; padding:2px 8px; border-radius:4px;">✕</span></div>`;
                 } else {
-                    if(it.cat==='برژاو' || it.ku.includes('کەباب')) hG=true;
+                    let cName = (it.cat || '') + ' ' + (it.base_name || '');
+                    if(cName.includes('برژاو') || cName.includes('کەباب') || cName.includes('تکە')) hG=true;
+                    
                     cnt += it.qty; tot += it.price*it.qty;
-                    let dName = it[l] || it.ku;
+                    let dName = it.ku; // هەمیشە ناوی تەواوەتی
+                    
                     h += `<div class="c-row">
                         <div style="flex:1; text-align:right; font-size:14px; font-weight:bold;">${dName}</div>
                         <div style="display:flex; align-items:center; gap:6px;">
                             <span style="color:var(--accent); font-size:12px; font-weight:bold;">${(it.price*it.qty).toLocaleString()}</span>
                             <button class="s-btn" style="background:#ef4444; font-size:12px;" onclick="delI(${i})">🗑</button>
-                            <button class="s-btn" style="background:#3b82f6; font-size:12px;" onclick="edtM(${i})">✏</button>
+                            <button class="s-btn" style="background:#3b82f6; font-size:12px;" onclick="openNoteModal(${i})">✏</button>
                             <button class="s-btn" onclick="updQ(${i},-1)">-</button>
                             <span style="width:30px; text-align:center; font-weight:bold; background:rgba(255,255,255,0.1); border-radius:4px; padding:2px;">${parseFloat(it.qty.toFixed(3))}</span>
                             <button class="s-btn add" onclick="updQ(${i},1)">+</button>
@@ -1561,7 +1811,8 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
             let dV=document.getElementById('btnDivM'); if(dV) dV.style.display=hG?'block':'none';
             document.querySelectorAll('.qty-lbl').forEach(el => {
                 let n=el.getAttribute('data-name'), tq=0;
-                cart.forEach(c => { if(!c.is_divider && c.ku.includes(n)) tq+=c.qty; });
+                // گەڕان بۆ هەمان خواردن (تەنانەت ئەگەر تێبینی جیاوازیشی هەبێت)
+                cart.forEach(c => { if(!c.is_divider && c.base_name === n) tq+=c.qty; });
                 el.innerText=parseFloat(tq.toFixed(3));
             });
         }
@@ -1584,7 +1835,16 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
             fetch('/get_table_orders/'+encodeURIComponent(tbl)).then(r=>r.json()).then(d=>{
                 cart=[]; orig=[];
                 if(d) { d.forEach(it=>{ 
-                    let o={is_divider:it.food_name.includes('───'), ku:it.food_name, full_name:it.food_name, price:parseFloat(it.price), qty:parseFloat(it.quantity), cat:it.category}; 
+                    let o={
+                        is_divider:it.food_name.includes('───'), 
+                        base_name:it.food_name, 
+                        ku:it.food_name, 
+                        full_name:it.food_name, 
+                        price:parseFloat(it.price), 
+                        qty:parseFloat(it.quantity), 
+                        cat:it.category,
+                        note:'', plate:'', rice:'', part:''
+                    }; 
                     cart.push(o); orig.push(JSON.parse(JSON.stringify(o))); 
                 }); } ren();
             });
@@ -1692,562 +1952,4 @@ def admin_amar():
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT food_name, quantity, price FROM froshtn WHERE DATE(created_at) >= %s AND DATE(created_at) <= %s AND food_name NOT LIKE '%%قاپی نوێ%%'", (start_date, end_date))
-            raw_data = cur.fetchall()
-            aggregated = {}
-            for item in raw_data:
-                clean_name = re.sub(r'^[+\s]+|[+\s]+$', '', str(item.get('food_name') or '')).replace('+', '').strip()
-                qty = float(item.get('quantity') or 1); price = float(item.get('price') or 0)
-                if clean_name not in aggregated: aggregated[clean_name] = {'food_name': clean_name, 'qty': 0, 'price': price, 'total': 0.0}
-                aggregated[clean_name]['qty'] += qty
-                aggregated[clean_name]['total'] += (qty * price)
-            report_rows = sorted(list(aggregated.values()), key=lambda x: x['qty'], reverse=True)
-            total_sales = sum(r['total'] for r in report_rows)
-            try:
-                cur.execute("SELECT IFNULL(SUM(amount), 0) AS e FROM masrwf WHERE DATE(masrwf_date) >= %s AND DATE(masrwf_date) <= %s", (start_date, end_date))
-                total_expenses = float(cur.fetchone()['e'])
-            except: pass
-            try:
-                cur.execute("SELECT IFNULL(SUM((CASE WHEN wa.status = 'هاتوو' THEN w.salary WHEN wa.status = 'نیوو شەفت' THEN w.salary / 2 ELSE 0 END) + IFNULL(wa.bonus, 0)), 0) AS w_due FROM workers w INNER JOIN worker_attendance wa ON w.id = wa.worker_id WHERE wa.date >= %s AND wa.date <= %s", (start_date, end_date))
-                total_workers_wage = float(cur.fetchone()['w_due'])
-            except: pass
-    except: pass
-    finally: conn.close()
-    net_profit = total_sales - (total_expenses + total_workers_wage)
-    return render_template_string(WEB_AMAR_TEMPLATE, start_date=start_date, end_date=end_date, report_rows=report_rows, total_sales=total_sales, total_expenses=total_expenses, total_workers_wage=total_workers_wage, net_profit=net_profit)
-
-@app.route('/admin/masrwf')
-def admin_masrwf():
-    if not session.get('authenticated') or session.get('role') != 'admin': return redirect(url_for('login'))
-    from_date = request.args.get('from_date', datetime.now().replace(day=1).strftime('%Y-%m-%d'))
-    to_date = request.args.get('to_date', datetime.now().strftime('%Y-%m-%d'))
-    rows, existing_types, existing_spenders = [], [], []
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, DATE_FORMAT(masrwf_date, '%%Y/%%m/%%d') AS m_date, DATE_FORMAT(masrwf_date, '%%Y-%%m-%%d') AS m_date_raw, masrwf_type, masrwf_name, spent_by, amount, payment_type, notes FROM masrwf WHERE DATE(masrwf_date) >= %s AND DATE(masrwf_date) <= %s ORDER BY masrwf_date DESC", (from_date, to_date))
-            for r in cur.fetchall():
-                rows.append({
-                    'id': r['id'], 'm_date': r['m_date'], 'm_date_raw': r['m_date_raw'],
-                    'masrwf_type': r.get('masrwf_type') if r.get('masrwf_type') != 'None' else r.get('masrwf_name'),
-                    'spent_by': r.get('spent_by') or '', 'amount': float(r.get('amount') or 0),
-                    'payment_type': r.get('payment_type') or 'نەغد', 'notes': r.get('notes') or ''
-                })
-            cur.execute("SELECT DISTINCT masrwf_type FROM masrwf WHERE masrwf_type IS NOT NULL AND masrwf_type != ''")
-            existing_types = [r['masrwf_type'] for r in cur.fetchall()]
-            cur.execute("SELECT DISTINCT spent_by FROM masrwf WHERE spent_by IS NOT NULL AND spent_by != ''")
-            existing_spenders = [r['spent_by'] for r in cur.fetchall()]
-    except: pass
-    finally: conn.close()
-    return render_template_string(WEB_MASRWF_TEMPLATE, rows=rows, from_date=from_date, to_date=to_date, today_date=datetime.now().strftime('%Y-%m-%d'), existing_types=existing_types, existing_spenders=existing_spenders)
-
-@app.route('/admin/save_masrwf', methods=['POST'])
-def admin_save_masrwf():
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("INSERT INTO masrwf (masrwf_date, masrwf_type, spent_by, amount, payment_type, notes) VALUES (%s, %s, %s, %s, %s, %s)", (request.form.get('masrwf_date'), request.form.get('masrwf_type', ''), request.form.get('spent_by', ''), float(request.form.get('amount', 0)), request.form.get('payment_type', 'نەغد'), request.form.get('notes', '')))
-        conn.commit()
-    except Exception as e: print(e)
-    finally: conn.close()
-    return redirect(url_for('admin_masrwf'))
-
-@app.route('/admin/update_masrwf', methods=['POST'])
-def admin_update_masrwf():
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("UPDATE masrwf SET masrwf_date=%s, masrwf_type=%s, spent_by=%s, amount=%s, payment_type=%s, notes=%s WHERE id=%s", (request.form.get('masrwf_date'), request.form.get('masrwf_type', ''), request.form.get('spent_by', ''), float(request.form.get('amount', 0)), request.form.get('payment_type', 'نەغد'), request.form.get('notes', ''), int(request.form.get('id', 0))))
-        conn.commit()
-    except Exception as e: print(e)
-    finally: conn.close()
-    return redirect(url_for('admin_masrwf'))
-
-@app.route('/admin/delete_masrwf/<int:mid>')
-def admin_delete_masrwf(mid):
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("DELETE FROM masrwf WHERE id=%s", (mid,))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_masrwf'))
-
-@app.route('/admin/workers')
-def admin_workers():
-    if not session.get('authenticated') or session.get('role') != 'admin': return redirect(url_for('login'))
-    start_date = request.args.get('start_date', datetime.now().replace(day=1).strftime('%Y-%m-%d'))
-    end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
-    rows, all_workers = [], []
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT w.id, w.name, w.phone, w.salary, 
-                IFNULL(SUM(CASE WHEN wa.status = 'هاتوو' THEN 1 WHEN wa.status = 'نیوو شەفت' THEN 0.5 ELSE 0 END), 0) AS work_days, 
-                (IFNULL(SUM(CASE WHEN wa.status = 'هاتوو' THEN 1 WHEN wa.status = 'نیوو شەفت' THEN 0.5 ELSE 0 END), 0) * w.salary) AS total_salary, 
-                IFNULL(SUM(wa.bonus), 0) AS total_bonus, 
-                ((IFNULL(SUM(CASE WHEN wa.status = 'هاتوو' THEN 1 WHEN wa.status = 'نیوو شەفت' THEN 0.5 ELSE 0 END), 0) * w.salary) + IFNULL(SUM(wa.bonus), 0)) AS total_due 
-                FROM workers w LEFT JOIN worker_attendance wa ON w.id = wa.worker_id AND wa.date >= %s AND wa.date <= %s 
-                GROUP BY w.id ORDER BY w.id DESC
-            """, (start_date, end_date))
-            rows = cur.fetchall()
-            cur.execute("SELECT id, name, salary FROM workers ORDER BY id ASC")
-            for w in cur.fetchall():
-                cur.execute("SELECT status FROM worker_attendance WHERE worker_id = %s ORDER BY date DESC LIMIT 1", (w['id'],))
-                st_row = cur.fetchone()
-                w['last_status'] = st_row['status'] if st_row else 'هاتوو'
-                all_workers.append(w)
-    except: pass
-    finally: conn.close()
-    return render_template_string(WEB_WORKERS_TEMPLATE, wage_rows=rows, all_workers=all_workers, start_date=start_date, end_date=end_date, today_date=datetime.now().strftime('%Y-%m-%d'))
-
-@app.route('/admin/add_worker', methods=['POST'])
-def admin_add_worker():
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("INSERT INTO workers (name, phone, salary) VALUES (%s, %s, %s)", (request.form.get('name'), request.form.get('phone', ''), float(request.form.get('salary', 0))))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_workers'))
-
-@app.route('/admin/edit_worker/<int:wid>', methods=['POST'])
-def admin_edit_worker(wid):
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("UPDATE workers SET name=%s, salary=%s WHERE id=%s", (request.form.get('name'), float(request.form.get('salary', 0)), wid))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_workers'))
-
-@app.route('/admin/save_attendance', methods=['POST'])
-def admin_save_attendance():
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            for wid in request.form.getlist('worker_ids'):
-                st = request.form.get(f'status_{wid}', 'هاتوو')
-                bo = float(request.form.get(f'bonus_{wid}', 0) or 0)
-                dt = request.form.get('att_date')
-                cur.execute("INSERT INTO worker_attendance (worker_id, date, status, bonus) VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE status=%s, bonus=%s", (wid, dt, st, bo, st, bo))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_workers'))
-
-@app.route('/admin/delete_worker/<int:wid>')
-def admin_delete_worker(wid):
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM worker_attendance WHERE worker_id=%s", (wid,))
-            cur.execute("DELETE FROM workers WHERE id=%s", (wid,))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_workers'))
-
-@app.route('/admin/users')
-def admin_users():
-    if not session.get('authenticated') or session.get('role') != 'admin': return redirect(url_for('login'))
-    users = []
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("SELECT * FROM users ORDER BY id DESC"); users = cur.fetchall()
-    except: pass
-    finally: conn.close()
-    return render_template_string(WEB_USERS_TEMPLATE, users=users)
-
-@app.route('/admin/add_user', methods=['POST'])
-def admin_add_user():
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("INSERT INTO users (username, password, full_name, role) VALUES (%s, %s, %s, %s)", (request.form.get('username'), request.form.get('password'), request.form.get('full_name', ''), request.form.get('role', 'Waiter')))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_users'))
-
-@app.route('/admin/edit_user/<int:uid>', methods=['POST'])
-def admin_edit_user(uid):
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("UPDATE users SET username=%s, password=%s, full_name=%s, role=%s WHERE id=%s", (request.form.get('username'), request.form.get('password'), request.form.get('full_name', ''), request.form.get('role', 'Waiter'), uid))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_users'))
-
-@app.route('/admin/toggle_user/<int:uid>')
-def admin_toggle_user(uid):
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT is_active FROM users WHERE id=%s", (uid,))
-            r = cur.fetchone()
-            if r: cur.execute("UPDATE users SET is_active=%s WHERE id=%s", (0 if r['is_active'] else 1, uid))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_users'))
-
-@app.route('/admin/delete_user/<int:uid>')
-def admin_delete_user(uid):
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("DELETE FROM users WHERE id=%s AND username!='admin'", (uid,))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_users'))
-
-@app.route('/admin/cashier')
-def admin_cashier():
-    if not session.get('authenticated') or session.get('role') != 'admin': return redirect(url_for('login'))
-    active_tables = []
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT table_cabin, COUNT(DISTINCT created_at) AS rounds FROM froshtn WHERE table_cabin != '' AND table_cabin NOT LIKE '%%[%%' GROUP BY table_cabin")
-            active_tables = sorted(cur.fetchall(), key=lambda x: (0, int(x['table_cabin'])) if str(x['table_cabin']).isdigit() else (1, str(x['table_cabin'])))
-    except: pass
-    finally: conn.close()
-    return render_template_string(WEB_CASHIER_TEMPLATE, active_tables=active_tables)
-
-@app.route('/admin/complete_payment', methods=['POST'])
-def admin_complete_payment():
-    data = request.get_json() or {}
-    t_num = str(data.get('table_number', ''))
-    tot = float(data.get('total_amount', 0))
-    paid = float(data.get('amount_paid', 0))
-    disc = max(0, tot - paid)
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT food_name, quantity, price FROM froshtn WHERE table_cabin = %s", (t_num,))
-            items = cur.fetchall()
-            p_id = t_num if ('سەفەری' in t_num or t_num.startswith('m')) else f"m{t_num}"
-            cur.execute("INSERT INTO qasa (place_id, amount, discount) VALUES (%s, %s, %s)", (p_id, paid, disc))
-            cur.execute("DELETE FROM froshtn WHERE table_cabin = %s OR table_cabin LIKE %s", (t_num, f"{t_num} [%"))
-        conn.commit()
-        return jsonify({'status': 'success', 'receipt': {'table': t_num, 'items': items, 'total': tot, 'paid': paid}})
-    except Exception as e: return jsonify({'status': 'error', 'message': str(e)})
-    finally: conn.close()
-
-@app.route('/admin/qasa')
-def admin_qasa():
-    if not session.get('authenticated') or session.get('role') != 'admin': return redirect(url_for('login'))
-    rows, tot_rec, tot_disc = [], 0, 0
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT DATE_FORMAT(transaction_time, '%Y-%m-%d %H:%i') as transaction_time, place_id, amount, discount FROM qasa WHERE transaction_time >= NOW() - INTERVAL 1 DAY ORDER BY transaction_time DESC")
-            rows = cur.fetchall()
-            tot_rec = sum(float(r['amount']) for r in rows)
-            tot_disc = sum(float(r['discount']) for r in rows)
-    except: pass
-    finally: conn.close()
-    return render_template_string(WEB_QASA_TEMPLATE, qasa_rows=rows, total_received=tot_rec, total_discount=tot_disc)
-
-@app.route('/admin/menu_manager')
-def admin_menu_manager():
-    if not session.get('authenticated') or session.get('role') != 'admin': return redirect(url_for('login'))
-    foods, cats = [], ['برژاو', 'کوڵاو', 'پەلەوەر', 'شەربەت و خواردنەوە', 'سەوزە و زەڵاتە', 'کوردیەکان', 'خواردنی خێرا', 'شۆربا', 'شیرینی']
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, food_name, food_name_ar, food_name_en, price, category, image_path FROM nse ORDER BY id DESC")
-            foods = cur.fetchall()
-            for f in foods:
-                if f.get('category') and f['category'] not in cats: cats.append(f['category'])
-    except: pass
-    finally: conn.close()
-    return render_template_string(WEB_MENU_MANAGER_TEMPLATE, foods=foods, existing_categories=cats)
-
-@app.route('/admin/add_food', methods=['POST'])
-def admin_add_food():
-    name = request.form.get('food_name')
-    name_ar = request.form.get('food_name_ar', '')
-    name_en = request.form.get('food_name_en', '')
-    price = float(request.form.get('price', 0))
-    cat = request.form.get('category', 'گشتی')
-    img_link = request.form.get('image_path_link', '').strip()
-    
-    img = img_link
-    if 'food_image' in request.files:
-        f = request.files['food_image']
-        if f.filename != '':
-            fn = secure_filename(f"{int(datetime.now().timestamp())}_{f.filename}")
-            f.save(os.path.join(app.config['UPLOAD_FOLDER'], fn))
-            img = url_for('static', filename=f'uploads/{fn}')
-            
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("INSERT INTO nse (food_name, food_name_ar, food_name_en, price, category, image_path) VALUES (%s, %s, %s, %s, %s, %s)", (name, name_ar, name_en, price, cat, img))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_menu_manager'))
-
-@app.route('/admin/edit_food/<int:fid>', methods=['POST'])
-def admin_edit_food(fid):
-    name = request.form.get('food_name')
-    name_ar = request.form.get('food_name_ar', '')
-    name_en = request.form.get('food_name_en', '')
-    price = float(request.form.get('price', 0))
-    cat = request.form.get('category', 'گشتی')
-    img_link = request.form.get('image_path_link', '').strip()
-    
-    final_img = None
-    if 'food_image' in request.files and request.files['food_image'].filename != '':
-        f = request.files['food_image']
-        fn = secure_filename(f"{int(datetime.now().timestamp())}_{f.filename}")
-        f.save(os.path.join(app.config['UPLOAD_FOLDER'], fn))
-        final_img = url_for('static', filename=f'uploads/{fn}')
-    elif img_link != '':
-        final_img = img_link
-
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            if final_img is not None:
-                cur.execute("UPDATE nse SET food_name=%s, food_name_ar=%s, food_name_en=%s, price=%s, category=%s, image_path=%s WHERE id=%s", (name, name_ar, name_en, price, cat, final_img, fid))
-            else:
-                cur.execute("UPDATE nse SET food_name=%s, food_name_ar=%s, food_name_en=%s, price=%s, category=%s WHERE id=%s", (name, name_ar, name_en, price, cat, fid))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_menu_manager'))
-
-@app.route('/admin/delete_food/<int:fid>')
-def admin_delete_food(fid):
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("DELETE FROM nse WHERE id=%s", (fid,))
-        conn.commit()
-    except: pass
-    finally: conn.close()
-    return redirect(url_for('admin_menu_manager'))
-
-@app.route('/desktop/tables')
-def desktop_tables():
-    if not session.get('authenticated'): return redirect(url_for('login'))
-    tk = []
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT table_cabin FROM froshtn WHERE table_cabin LIKE 'سەفەری%' AND table_cabin NOT LIKE '%%[%%'")
-            tk = [r['table_cabin'] for r in cur.fetchall()]
-    except: pass
-    finally: conn.close()
-    return render_template_string(DESKTOP_TABLES_TEMPLATE, active_takeaways=tk)
-
-@app.route('/desktop')
-def desktop_menu():
-    if not session.get('authenticated'): return redirect(url_for('login'))
-    tbl = request.args.get('table')
-    if not tbl: return redirect(url_for('desktop_tables'))
-    cats = {}
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, food_name, food_name_ar, food_name_en, price, category, image_path FROM nse WHERE food_name != ''")
-            for f in cur.fetchall(): cats.setdefault(f['category'] or 'گشتی', []).append(f)
-    except: pass
-    finally: conn.close()
-    return render_template_string(DESKTOP_TEMPLATE, categories=cats, selected_table=tbl)
-
-@app.route('/mobile/tables')
-def mobile_waiter_tables():
-    if not session.get('authenticated'): return redirect(url_for('login'))
-    tk = []
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT table_cabin FROM froshtn WHERE table_cabin LIKE 'سەفەری%' AND table_cabin NOT LIKE '%%[%%'")
-            tk = [r['table_cabin'] for r in cur.fetchall()]
-    except: pass
-    finally: conn.close()
-    return render_template_string(MOBILE_TABLES_TEMPLATE, active_takeaways=tk)
-
-@app.route('/mobile/menu')
-def mobile_waiter_menu():
-    if not session.get('authenticated'): return redirect(url_for('login'))
-    tbl = request.args.get('table', '1')
-    cats = {}
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, food_name, food_name_ar, food_name_en, price, category, image_path FROM nse WHERE food_name != ''")
-            for f in cur.fetchall(): cats.setdefault(f['category'] or 'گشتی', []).append(f)
-    except: pass
-    finally: conn.close()
-    return render_template_string(CUSTOMER_MENU_TEMPLATE, table_num=tbl, categories=cats, allow_ordering=True)
-
-@app.route('/table/<path:table_num>')
-def customer_table_view(table_num):
-    allow = True
-    cats = {}
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            if table_num.isdigit():
-                cur.execute("SELECT allow_ordering FROM table_permissions WHERE table_number=%s", (int(table_num),))
-                r = cur.fetchone()
-                if r: allow = bool(r['allow_ordering'])
-            cur.execute("SELECT id, food_name, food_name_ar, food_name_en, price, category, image_path FROM nse WHERE food_name != ''")
-            for f in cur.fetchall(): cats.setdefault(f['category'] or 'گشتی', []).append(f)
-    except: pass
-    finally: conn.close()
-    return render_template_string(CUSTOMER_MENU_TEMPLATE, table_num=table_num, categories=cats, allow_ordering=allow)
-
-@app.route('/qr_manager')
-def qr_manager():
-    if not session.get('authenticated'): return redirect(url_for('login'))
-    pd = {}
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT table_number, allow_ordering FROM table_permissions")
-            for r in cur.fetchall(): pd[r['table_number']] = r['allow_ordering']
-    except: pass
-    finally: conn.close()
-    return render_template_string(QR_MANAGER_TEMPLATE, base_url=request.host_url.rstrip('/'), perm_dict=pd)
-
-@app.route('/toggle_table_permission', methods=['POST'])
-def toggle_table_permission():
-    t_num = int(request.get_json().get('table_number'))
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT allow_ordering FROM table_permissions WHERE table_number=%s", (t_num,))
-            r = cur.fetchone()
-            nv = 0 if (r and r['allow_ordering']) else 1
-            cur.execute("INSERT INTO table_permissions (table_number, allow_ordering) VALUES (%s,%s) ON DUPLICATE KEY UPDATE allow_ordering=%s", (t_num, nv, nv))
-        conn.commit()
-        return jsonify({'status': 'success', 'allow_ordering': nv})
-    except: return jsonify({'status': 'error'})
-    finally: conn.close()
-
-@app.route('/save_cart_order', methods=['POST'])
-def save_cart_order():
-    data = request.get_json() or {}
-    tbl = str(data.get('table_number', ''))
-    cart = data.get('cart_items', [])
-    orig = data.get('original_items', [])
-
-    def parse_items(items_list):
-        parsed = {}
-        plate_idx = 1
-        for it in items_list:
-            fname = str(it.get('full_name') or it.get('food_name') or '')
-            is_div = it.get('is_divider') or 'قاپی نوێ' in fname or '───' in fname
-            if is_div:
-                plate_idx += 1
-            else:
-                key = f"{fname}__P{plate_idx}"
-                if key not in parsed: parsed[key] = {'real_name': fname, 'qty': 0, 'price': float(it.get('price', 0)), 'cat': it.get('cat', 'گشتی')}
-                parsed[key]['qty'] += float(it.get('qty', 1))
-        return parsed
-
-    old_map = parse_items(orig)
-    new_map = parse_items(cart)
-
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            if tbl.isdigit():
-                cur.execute("SELECT allow_ordering FROM table_permissions WHERE table_number = %s", (int(tbl),))
-                p_row = cur.fetchone()
-                if p_row and not p_row['allow_ordering'] and session.get('role') not in ['mobile_waiter', 'admin']:
-                    return jsonify({'status': 'error', 'message': 'تەنها بۆ بینینە'})
-
-            cur.execute("DELETE FROM froshtn WHERE table_cabin = %s", (tbl,))
-            for it in cart:
-                fname = str(it.get('ku') or it.get('full_name') or it.get('food_name') or '')
-                is_div = it.get('is_divider') or 'قاپی نوێ' in fname or '───' in fname
-                final_name = "─── قاپی نوێ ───" if is_div else fname
-                cur.execute("INSERT INTO froshtn (table_cabin, food_name, quantity, price, category, created_at, is_printed) VALUES (%s, %s, %s, %s, %s, NOW(), 1)", (tbl, final_name, float(it.get('qty', 1)), float(it.get('price', 0)), it.get('cat', 'گشتی')))
-
-            kitchen_inserts = []
-            plate_idx = 1
-            current_plate_printed = False
-
-            for it in cart:
-                fname = str(it.get('ku') or it.get('full_name') or it.get('food_name') or '')
-                is_div = it.get('is_divider') or 'قاپی نوێ' in fname or '───' in fname
-                if is_div:
-                    plate_idx += 1; current_plate_printed = False
-                else:
-                    key = f"{fname}__P{plate_idx}"
-                    new_qty = float(it.get('qty', 1))
-                    old_qty = old_map.get(key, {}).get('qty', 0)
-                    diff = new_qty - old_qty
-                    if diff > 0:
-                        if plate_idx > 1 and not current_plate_printed:
-                            kitchen_inserts.append({'name': '─── قاپی نوێ ───', 'qty': 1, 'price': 0, 'cat': 'برژاو', 'action': 'add'})
-                            current_plate_printed = True
-                        kitchen_inserts.append({'name': f"+ {fname}", 'qty': diff, 'price': float(it.get('price', 0)), 'cat': it.get('cat', 'گشتی'), 'action': 'add'})
-
-            for k, old_data in old_map.items():
-                new_qty = new_map.get(k, {}).get('qty', 0)
-                diff = new_qty - old_data['qty']
-                if diff < 0:
-                    kitchen_inserts.append({'name': f"سڕاوەتەوە: {old_data['real_name']}", 'qty': abs(diff), 'price': old_data['price'], 'cat': old_data['cat'], 'action': 'delete'})
-
-            for ki in kitchen_inserts:
-                tbl_suffix = " [زیادکراو]" if ki['action'] == 'add' else " [سڕاوەتەوە]"
-                cur.execute("INSERT INTO froshtn (table_cabin, food_name, quantity, price, category, created_at, is_printed) VALUES (%s, %s, %s, %s, %s, NOW(), 0)", (tbl + tbl_suffix, ki['name'], float(ki['qty']), float(ki['price']), ki['cat']))
-
-        conn.commit()
-        return jsonify({'status': 'success'})
-    except Exception as ex: return jsonify({'status': 'error', 'message': str(ex)})
-    finally: conn.close()
-
-@app.route('/get_table_orders/<path:table_num>')
-def get_table_orders(table_num):
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT food_name, price, quantity, category FROM froshtn WHERE table_cabin = %s", (str(table_num),))
-            return jsonify(cur.fetchall())
-    except: return jsonify([])
-    finally: conn.close()
-
-@app.route('/clear_table_orders', methods=['POST'])
-def clear_table_orders():
-    tbl = str(request.get_json().get('table_number'))
-    conn = get_db()
-    try:
-        with conn.cursor() as cur: cur.execute("DELETE FROM froshtn WHERE table_cabin = %s OR table_cabin LIKE %s", (tbl, f"{tbl} [%"))
-        conn.commit()
-        return jsonify({'status': 'success'})
-    except: return jsonify({'status': 'error'})
-    finally: conn.close()
-
-@app.route('/get_active_tables')
-def get_active_tables():
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT table_cabin FROM froshtn WHERE table_cabin NOT LIKE '%%[%%' AND table_cabin != ''")
-            return jsonify([str(r['table_cabin']).strip() for r in cur.fetchall()])
-    except: return jsonify([])
-    finally: conn.close()
-
-@app.route('/transfer_table_orders', methods=['POST'])
-def transfer_table_orders():
-    data = request.get_json() or {}
-    f_tbl = str(data.get('from_table', '')).strip()
-    t_tbl = str(data.get('to_table', '')).strip()
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE froshtn SET table_cabin = REPLACE(table_cabin, %s, %s) WHERE table_cabin = %s OR table_cabin LIKE %s", (f_tbl, t_tbl, f_tbl, f"{f_tbl} [%"))
-        conn.commit()
-        return jsonify({'status': 'success'})
-    except Exception as ex: return jsonify({'status': 'error', 'message': str(ex)})
-    finally: conn.close()
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+            cur.execute("SELECT food_name, quantity, price FROM froshtn WHERE DATE(created_at)
