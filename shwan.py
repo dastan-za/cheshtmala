@@ -10,7 +10,7 @@ import json
 from openai import OpenAI
 
 app = Flask(__name__)
-app.secret_key = 'shahoor_all_in_one_pos_2026_v10'
+app.secret_key = 'client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=2)
 
 # تکایە کلیلی API یەکەی خۆت لێرە دابنێ
