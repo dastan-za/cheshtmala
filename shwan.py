@@ -2,12 +2,19 @@ from flask import Flask, render_template_string, request, jsonify, redirect, url
 from datetime import timedelta, datetime
 from werkzeug.utils import secure_filename
 import pymysql
+import pymysql.cursors
 import os
 import re
+import base64
+import json
+from openai import OpenAI
 
 app = Flask(__name__)
 app.secret_key = 'shahoor_all_in_one_pos_2026_v10'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=2)
+
+# تکایە کلیلی API یەکەی خۆت لێرە دابنێ
+client = OpenAI(api_key="sk-YOUR_OPENAI_API_KEY_HERE")
 
 UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -30,7 +37,6 @@ DB_CONFIG = {
 
 def get_db():
     conn = pymysql.connect(**DB_CONFIG)
-    conn.ping(reconnect=True)
     return conn
 
 def normalize_digits(text):
@@ -48,13 +54,16 @@ def ensure_all_tables():
             cursor.execute("""CREATE TABLE IF NOT EXISTS users (id INT AUTO_INCREMENT PRIMARY KEY, username VARCHAR(100) NOT NULL UNIQUE, password VARCHAR(100) NOT NULL, full_name VARCHAR(150) DEFAULT '', role VARCHAR(50) DEFAULT 'Waiter', can_view_menu TINYINT DEFAULT 1, can_view_tables TINYINT DEFAULT 1, can_view_cashier TINYINT DEFAULT 0, can_view_qsa TINYINT DEFAULT 0, can_view_reports TINYINT DEFAULT 0, can_view_settings TINYINT DEFAULT 0, is_active TINYINT DEFAULT 1);""")
             cursor.execute("""CREATE TABLE IF NOT EXISTS nse (id INT AUTO_INCREMENT PRIMARY KEY, food_name VARCHAR(255) NOT NULL, price DECIMAL(18, 0) NOT NULL DEFAULT 0, category VARCHAR(150) DEFAULT 'گشتی', image_path TEXT, nsecol VARCHAR(50) DEFAULT '');""")
             
+            try: cursor.execute("ALTER TABLE nse MODIFY COLUMN image_path LONGTEXT;")
+            except: pass
+            
             try: cursor.execute("ALTER TABLE nse ADD COLUMN food_name_ar VARCHAR(255) DEFAULT '';")
             except: pass
             try: cursor.execute("ALTER TABLE nse ADD COLUMN food_name_en VARCHAR(255) DEFAULT '';")
             except: pass
 
             cursor.execute("""CREATE TABLE IF NOT EXISTS froshtn (order_id INT AUTO_INCREMENT PRIMARY KEY, quantity DECIMAL(10, 3) DEFAULT 1, food_name VARCHAR(255), price DECIMAL(18, 0), category VARCHAR(150), table_cabin VARCHAR(150), notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, status VARCHAR(50) DEFAULT 'Active', is_printed TINYINT DEFAULT 0);""")
-            try: cursor.execute("ALTER TABLE froshtn MODIFY COLUMN quantity DECIMAL(10, 3) DEFAULT 1;")
+            try: cursor.execute("ALTER TABLE froshtn ADD COLUMN is_printed TINYINT DEFAULT 0;")
             except: pass
 
             cursor.execute("""CREATE TABLE IF NOT EXISTS table_permissions (table_number INT PRIMARY KEY, allow_ordering TINYINT DEFAULT 1);""")
@@ -111,6 +120,14 @@ COMMON_HEAD = """
     [data-theme="darkred"] { --bg: #2a0808; --card: #450a0a; --primary: #fca5a5; --accent: #f87171; --border: #7f1d1d; }
     [data-theme="gold"] { --bg: #1c1400; --card: #382700; --primary: #fbbf24; --accent: #f59e0b; --border: #78350f; }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Noto Kufi Arabic', sans-serif; transition: background 0.3s, border-color 0.3s; }
+    
+    /* ستايلی هاوبەش بۆ دوگمەی خێرای تێبینی */
+    .btn-quick-note { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight:bold; flex: 1 1 30%; text-align: center; transition: 0.2s; }
+    .btn-quick-note:hover, .btn-quick-note:active { background: var(--primary); color: #000; border-color: var(--primary); transform: scale(0.95); }
+    
+    /* ستايلی حاسیبەکە (Numpad) */
+    .btn-num { background: var(--card); border: 1px solid var(--border); color: #fff; padding: 15px; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+    .btn-num:active { background: var(--primary); color: #000; }
 </style>
 <script>
     window.savedTheme = localStorage.getItem('theme') || 'luxury';
@@ -193,7 +210,7 @@ LOGIN_TEMPLATE = COMMON_HEAD + """
         </div>
     </div>
     <div class="login-card">
-        <div class="brand-title" id="t_title">✨ چێشتماڵە</div>
+        <div class="brand-title" id="t_title">✨ دیوانی سوڵتان</div>
         <div class="brand-sub" id="t_sub">تکایە ناوی بەکارهێنەر و وشەی نهێنی بنووسە</div>
         <form method="POST" action="/login">
             <div class="input-group"><label id="t_lbl_u">ناوی بەکارهێنەر</label><input type="text" name="username" class="login-input" autofocus></div>
@@ -204,9 +221,9 @@ LOGIN_TEMPLATE = COMMON_HEAD + """
     </div>
     <script>
         const langDictL = {
-            'ku': { 'title': '✨ چێشتماڵە', 'sub': 'تکایە ناوی بەکارهێنەر و وشەی نهێنی بنووسە', 'lbl_u': 'ناوی بەکارهێنەر', 'lbl_p': 'وشەی نهێنی', 'btn': 'چوونەژوورەوە ➔' },
-            'ar': { 'title': '✨ جيشتمالة', 'sub': 'يرجى إدخال اسم المستخدم وكلمة المرور', 'lbl_u': 'اسم المستخدم', 'lbl_p': 'كلمة المرور', 'btn': 'تسجيل الدخول ➔' },
-            'en': { 'title': '✨ Cheshtmala', 'sub': 'Please enter your username and password', 'lbl_u': 'Username', 'lbl_p': 'Password', 'btn': 'Login ➔' }
+            'ku': { 'title': '✨ دیوانی سوڵتان', 'sub': 'تکایە ناوی بەکارهێنەر و وشەی نهێنی بنووسە', 'lbl_u': 'ناوی بەکارهێنەر', 'lbl_p': 'وشەی نهێنی', 'btn': 'چوونەژوورەوە ➔' },
+            'ar': { 'title': '✨ ديوان سولتان', 'sub': 'يرجى إدخال اسم المستخدم وكلمة المرور', 'lbl_u': 'اسم المستخدم', 'lbl_p': 'كلمة المرور', 'btn': 'تسجيل الدخول ➔' },
+            'en': { 'title': '✨ Dewani Swltan', 'sub': 'Please enter your username and password', 'lbl_u': 'Username', 'lbl_p': 'Password', 'btn': 'Login ➔' }
         };
         
         let themeEl = document.getElementById('theme-' + window.savedTheme);
@@ -283,7 +300,7 @@ ADMIN_DASHBOARD_TEMPLATE = COMMON_HEAD + """
 </head>
 <body>
     <header class="admin-nav">
-        <div class="admin-brand" data-tr="dashboard">✨ چێشتماڵە - داشبۆرد</div>
+        <div class="admin-brand" data-tr="dashboard">✨ دیوانی سوڵتان - داشبۆرد</div>
         <div style="display: flex; align-items: center; gap: 16px;">
             <span style="color:#cbd5e1; font-size:13px; font-weight:700;">👑 {{ session.get('full_name', 'بەڕێوەبەر') }}</span>
             <a href="/logout" class="btn-exit" data-tr="logout">✕ دەرچوون</a>
@@ -544,8 +561,8 @@ WEB_WORKERS_TEMPLATE = COMMON_HEAD + """
                 <div style="font-weight:bold; width: 150px; color:var(--primary);">{{ aw.name }}</div>
                 <div style="display:flex; gap:15px; flex:1; align-items:center;">
                     <label style="cursor:pointer;"><input type="radio" name="status_{{ aw.id }}" value="هاتوو" {{ 'checked' if aw.last_status not in ['نەهاتوو', 'نیوو شەفت'] else '' }}> هاتوو</label>
-                    <label style="cursor:pointer; color:var(--accent);"><input type="radio" name="status_{{ aw.id }}" value="نیوو شەفت" {{ 'checked' if aw.last_status == 'نیوو شەفت' else '' }}> نیوو شەفت</label>
-                    <label style="cursor:pointer; color:var(--danger);"><input type="radio" name="status_{{ aw.id }}" value="نەهاتوو" {{ 'checked' if aw.last_status == 'نەهاتوو' else '' }}> نەهاتوو</label>
+                    <label style="cursor:pointer; color:var(--accent)"><input type="radio" name="status_{{ aw.id }}" value="نیوو شەفت" {{ 'checked' if aw.last_status == 'نیوو شەفت' else '' }}> نیوو شەفت</label>
+                    <label style="cursor:pointer; color:var(--danger)"><input type="radio" name="status_{{ aw.id }}" value="نەهاتوو" {{ 'checked' if aw.last_status == 'نەهاتوو' else '' }}> نەهاتوو</label>
                 </div>
                 <div><input type="number" name="bonus_{{ aw.id }}" class="c-input" value="0" placeholder="بەخشش" style="width:100px;"></div>
             </div>
@@ -754,8 +771,11 @@ WEB_CASHIER_TEMPLATE = COMMON_HEAD + """
             fetch('/get_table_orders/' + encodeURIComponent(tbl)).then(r=>r.json()).then(items => {
                 let tbody = document.getElementById('chList'); tbody.innerHTML = ''; tot = 0;
                 items.forEach(it => {
-                    let line = it.price * parseFloat(it.quantity); tot += line;
-                    tbody.innerHTML += `<tr><td style="text-align:right;">${it.food_name}</td><td>${parseFloat(it.quantity)}</td><td>${it.price}</td><td>${line}</td></tr>`;
+                    let q = parseFloat(it.quantity) || 0;
+                    let p = parseFloat(it.price) || 0;
+                    let line = p * q;
+                    tot += line;
+                    tbody.innerHTML += `<tr><td style="text-align:right;">${it.food_name}</td><td>${q}</td><td>${p}</td><td>${line}</td></tr>`;
                 });
                 document.getElementById('lblTot').innerText = tot; document.getElementById('txtPaid').value = tot;
                 calcChange(); document.getElementById('chModal').style.display = 'flex';
@@ -769,17 +789,91 @@ WEB_CASHIER_TEMPLATE = COMMON_HEAD + """
             fetch('/admin/complete_payment', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({table_number:curTable, amount_paid:p, total_amount:tot})})
             .then(r=>r.json()).then(res=>{ if(res.status==='success'){ printR(res.receipt); } else alert(res.message); });
         }
-        function printR(d) {
+      function printR(d) {
             let win = window.open('','_blank','width=400,height=600');
-            let h = `<!DOCTYPE html><html dir="rtl"><head><style>body{font-family:sans-serif; width:72mm; margin:0 auto; padding:4mm; font-size:12px; text-align:center;} .line{border-top:1px dashed #000; margin:5px 0;} th,td{text-align:center; padding:2px;} .r{text-align:right;}</style></head><body>
-            <h3>چێشتماڵە</h3><div>مێزی: ${d.table}</div><div class="line"></div>
-            <table style="width:100%"><tr><th class="r">خواردن</th><th>بڕ</th><th>کۆ</th></tr>`;
-            d.items.forEach(it => { h += `<tr><td class="r">${it.food_name||it[0]}</td><td>${parseFloat(it.quantity||it[1])}</td><td>${(it.price||it[2])*parseFloat(it.quantity||it[1])}</td></tr>`; });
-            h += `</table><div class="line"></div><div style="text-align:right">کۆی گشتی: ${d.total}</div><div style="text-align:right">وەرگیراو: ${d.paid}</div>
-            <div class="line"></div><div>سوپاس!</div><script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}<\/script></body></html>`;
-            win.document.write(h); win.document.close();
-            document.getElementById('chModal').style.display='none'; setTimeout(()=>location.reload(), 1000);
+            let h = `<!DOCTYPE html><html dir="rtl"><head>
+            <meta charset="utf-8">
+            <link href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+            <style>
+                @page { margin: 0; }
+                body {
+                    font-family: 'Noto Kufi Arabic', sans-serif; 
+                    width: 72mm; 
+                    margin: 0 auto; 
+                    padding: 3mm; 
+                    font-size: 10px; 
+                    color: #000;
+                    box-sizing: border-box;
+                }
+                .t { text-align: center; font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+                .s { text-align: center; font-size: 11px; margin-bottom: 4px; font-weight: 600; }
+                .line { border-top: 1px dashed #000; margin: 4px 0; }
+                
+                table { width: 100%; border-collapse: collapse; margin-bottom: 5px; table-layout: fixed; }
+                th, td { padding: 3px 1px; }
+                th { border-bottom: 1px solid #000; font-size: 10px; font-weight: 700; }
+                td { font-size: 10px; font-weight: 600; vertical-align: top; }
+                
+                .col-name { width: 50%; text-align: right; word-wrap: break-word; }
+                .col-qty { width: 15%; text-align: center; }
+                .col-tot { width: 35%; text-align: left; }
+                
+                .tot { display: flex; justify-content: space-between; font-weight: 700; font-size: 12px; margin-top: 3px; }
+                .ft { text-align: center; font-weight: 700; font-size: 12px; margin-top: 8px; margin-bottom: 0; }
+            </style>
+            </head><body>
+            <div class="t">دیوانی سوڵتان</div>
+            <div class="s">مێزی: ${d.table}</div>
+            <div class="line"></div>
+            <table>
+                <tr>
+                    <th class="col-name">خواردن</th>
+                    <th class="col-qty">بڕ</th>
+                    <th class="col-tot">کۆ</th>
+                </tr>`;
+            
+            d.items.forEach(it => { 
+                let qty = parseFloat(it.quantity||it[1]);
+                let price = parseFloat(it.price||it[2]);
+                h += `<tr>
+                        <td class="col-name">${it.food_name||it[0]}</td>
+                        <td class="col-qty">${qty}</td>
+                        <td class="col-tot">${(price*qty).toLocaleString()}</td>
+                      </tr>`; 
+            });
+            
+            h += `</table><div class="line"></div>
+            <div class="tot"><span>کۆی گشتی:</span><span>${Number(d.total).toLocaleString()}</span></div>
+            <div class="tot"><span>وەرگیراو:</span><span>${Number(d.paid).toLocaleString()}</span></div>
+            <div class="line"></div><div class="ft">سوپاس بۆ سەردانیتان</div>
+            <script>
+                window.onload = function() {
+                    setTimeout(function(){
+                        window.print();
+                        setTimeout(function(){ window.close(); }, 500);
+                    }, 500);
+                };
+            <\/script></body></html>`;
+            
+            win.document.write(h); 
+            win.document.close();
+            document.getElementById('chModal').style.display='none'; 
+            setTimeout(()=>location.reload(), 1000);
         }
+        setInterval(() => {
+            let modal = document.getElementById('chModal');
+            if (!modal || modal.style.display !== 'flex') {
+                fetch('/admin/cashier')
+                .then(r => r.text())
+                .then(html => {
+                    let doc = new DOMParser().parseFromString(html, 'text/html');
+                    let newGrid = doc.getElementById('tablesGrid');
+                    if (newGrid) {
+                        document.getElementById('tablesGrid').innerHTML = newGrid.innerHTML;
+                    }
+                }).catch(e => console.log('Error refreshing tables:', e));
+            }
+        }, 4000);
     </script>
 </body>
 </html>
@@ -989,7 +1083,7 @@ DESKTOP_TABLES_TEMPLATE = COMMON_HEAD + """
         <h2 style="color:var(--primary); font-size:18px;">تکایە مێزێک هەڵبژێرە</h2>
         <div style="display:flex; gap:10px;">
             {% if session.get('role') == 'admin' %}<a href="/admin" class="btn-take" style="background:var(--accent); color:#000;">داشبۆرد</a>{% endif %}
-            <button class="btn-take" onclick="let n=prompt('ناوی کڕیار:'); if(n) location.href='/desktop?table='+encodeURIComponent('سەفەری ('+n+')')">سەفەری 🛵</button>
+            <button class="btn-take" onclick="let n=prompt('ناوی کڕیار (یان ناونیشان):'); if(n) { let p=prompt('ژمارەی مۆبایل:'); let res = p ? n + ' - ' + p : n; location.href='/desktop?table='+encodeURIComponent('سەفەری ('+res+')'); }">سەفەری 🛵</button>
         </div>
     </div>
     <div class="g" id="tg">
@@ -1019,10 +1113,10 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
     <title>POS - {{ selected_table }}</title>
     <style>
         * { user-select: none; }
-        body { margin: 0; padding: 0; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
-        .desktop-main-layout { display: flex; flex-direction: row; width: 100vw; height: 100vh; }
+        body { margin: 0; padding: 0; background: var(--bg); color: var(--text); height: 100dvh; min-height: -webkit-fill-available; overflow: hidden; }
+        .desktop-main-layout { display: flex; flex-direction: row; width: 100vw; height: 100%; }
         
-        .cart-side { width: 40%; height: 100vh; display: flex; flex-direction: column; padding: 15px; background: rgba(0,0,0,0.2); border-left: 1px solid var(--border); overflow: hidden; }
+        .cart-side { width: 40%; height: 100%; display: flex; flex-direction: column; padding: 15px; background: rgba(0,0,0,0.2); border-left: 1px solid var(--border); overflow: hidden; }
         .c-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
         .btn-top { background: var(--card); border: 1px solid var(--border); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; text-decoration: none; }
         
@@ -1037,26 +1131,27 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
         .c-tot { font-size: 15px; font-weight: bold; color: var(--accent); display: flex; justify-content: space-between; margin-bottom: 8px; }
         .btn-send { background: var(--accent); color: #000; border: none; padding: 8px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%; box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3); }
 
-        .menu-side { width: 60%; height: 100vh; display: flex; flex-direction: column; padding: 15px; overflow: hidden; }
+        .menu-side { width: 60%; height: 100%; display: flex; flex-direction: column; padding: 15px; overflow: hidden; }
         .cat-bar { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 15px; flex-shrink: 0; }
         .cat-btn { background: var(--card); border: 2px solid var(--border); border-radius: 12px; padding: 5px 15px; min-width: 80px; text-align: center; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         .cat-btn.active { border-color: var(--primary); background: rgba(0,0,0,0.3); }
         .cat-visual-img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; margin-bottom: 5px; pointer-events: none; }
         .cat-visual-title { font-size: 11px; font-weight: bold; color: #fff; pointer-events: none; }
 
-        .food-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; overflow-y: auto; padding-right: 5px; align-content: start; padding-bottom: 20px; grid-auto-rows: minmax(270px, auto); }
-        .f-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
-        .f-card:active { transform: scale(0.96); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .f-img { width: 100%; height: 140px; object-fit: cover; border-radius: 10px; margin-bottom: 10px; flex-shrink: 0; pointer-events: none; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        .f-name { font-size: 14px; font-weight: bold; line-height: 1.3; margin-bottom: 4px; pointer-events: none; }
-        .f-price { color: var(--accent); font-weight: bold; font-size: 13px; margin-bottom: 2px; pointer-events: none; }
-        
-        .opt-select { flex: 1 1 45%; min-width: 0; background: var(--bg); border: 1px solid var(--border); color: #fff; border-radius: 6px; padding: 5px; font-size: 11px; outline: none; text-overflow: ellipsis; }
+        .food-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; overflow-y: auto; padding-right: 5px; align-content: start; padding-bottom: 20px; }
+        .f-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; cursor: pointer; display: flex; flex-direction: column; justify-content: flex-start; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.15); transition: transform 0.2s; }
+        .f-card:active { transform: scale(0.96); }
+        .f-img { width: 100%; height: 120px; object-fit: cover; border-radius: 10px; margin-bottom: 8px; flex-shrink: 0; }
+        .f-name { font-size: 13px; font-weight: bold; line-height: 1.3; margin-bottom: 4px; pointer-events: none; }
+        .f-price { color: var(--accent); font-weight: bold; font-size: 13px; margin-bottom: 10px; pointer-events: none; }
         
         #toastMsg { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--accent); color: #000; padding: 10px 24px; border-radius: 30px; font-size: 14px; font-weight: 700; z-index: 1000; display: none; }
 
         .modal-transfer { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); display: none; align-items: center; justify-content: center; z-index: 2000; padding: 16px; }
         .modal-transfer-box { background: var(--card); border: 2px solid var(--border); border-radius: 14px; padding: 20px; width: 100%; max-width: 360px; color: #fff; text-align: center; }
+        
+        /* Modal for Notes */
+        .modal-note { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
     </style>
 </head>
 <body dir="rtl">
@@ -1079,6 +1174,7 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
                 <div class="c-tot"><span>کۆی گشتی:</span><span id="totTxt">0</span></div>
                 <div style="display:flex; gap:10px;">
                     <button class="btn-send" style="background:#8b5cf6; flex:1; display:none; color:#fff;" id="btnDiv" onclick="addDiv()">+ هێڵ</button>
+                    <button type="button" class="btn-send" style="background:#3b82f6; color:#fff; flex:1;" onclick="startVoiceAPI()">🎤 دەنگی</button>
                     <button class="btn-send" style="flex:2;" onclick="sendO()">ناردن ➔</button>
                 </div>
             </div>
@@ -1101,34 +1197,75 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
                 {% for cat, items in categories.items() %}
                 {% set cat_idx = loop.index %}
                 {% for it in items %}
-                {% set c_name = (it.category or '') | replace('ي', 'ی') | trim %}
-                {% set show_fish = ('ماسی' in c_name or 'ماسی' in it.food_name) %}
-                {% set show_r = ('کوڵاو' in c_name or 'پەلەوەر' in c_name or 'کورد' in c_name) %}
-                {% set show_c = ('پەلەوەر' in c_name or 'مریشک' in c_name) %}
-                {% set show_grill = ('برژاو' in c_name) %}
                 
                 <div class="f-card cat-item cat-{{ cat_idx }}" onclick="addF('{{ it.food_name | replace("'", "\\'") }}', {{ it.price }}, '{{ (it.category or '') | replace("'", "\\'") }}', {{ it.id }})">
                     <img src="{{ it.image_path if it.image_path else 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300' }}" class="f-img" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300'">
                     <div class="f-name food-title-disp" data-ku="{{ it.food_name }}" data-ar="{{ it.food_name_ar or it.food_name }}" data-en="{{ it.food_name_en or it.food_name }}">{{ it.food_name }}</div>
                     <div class="f-price">{{ "{:,.0f}".format(it.price) }}</div>
-                    
-                    {% if show_r or show_c or show_fish or show_grill %}
-                    <div style="display:flex; gap:4px; width:100%; flex-wrap:wrap; margin-top:auto; padding-top:6px;">
-                        {% if show_fish %}
-                        <div style="display:flex; flex-direction:row; gap:4px; width:100%; flex-wrap:nowrap;">
-                            <input type="number" id="pcs_{{it.id}}" class="opt-select" style="flex:1; min-width:0;" step="1" min="1" value="1" onclick="event.stopPropagation()" placeholder="دانە">
-                            <input type="number" id="w_{{it.id}}" class="opt-select" style="flex:1; min-width:0;" step="0.25" min="0.25" value="1" onclick="event.stopPropagation()" placeholder="کێش">
-                        </div>
-                        {% endif %}
-                        {% if show_r %}<select class="opt-select" id="r_{{it.id}}" onclick="event.stopPropagation()"><option value="">ج. برنج</option><option value="درێژ">درێژ</option><option value="خڕ">خڕ</option><option value="کوردی">کوردی</option></select>{% endif %}
-                        {% if show_c %}<select class="opt-select" id="c_{{it.id}}" onclick="event.stopPropagation()"><option value="">ب. مریشک</option><option value="سینگ">سینگ</option><option value="ڕان">ڕان</option></select>{% endif %}
-                        {% if show_grill %}<select class="opt-select" id="g_{{it.id}}" onclick="event.stopPropagation()"><option value="">قاپەکان</option>{% for i in range(1, 10) %}<option value="قاپی {{ i }}">قاپی {{ i }}</option>{% endfor %}</select>{% endif %}
-                    </div>
-                    {% endif %}
                 </div>
                 {% endfor %}
                 {% endfor %}
             </div>
+        </div>
+    </div>
+
+    <!-- Note Modal -->
+    <div class="modal-note" id="noteModal">
+        <div class="m-box" style="background:var(--card); border:1px solid var(--border); border-radius:16px; max-width: 400px; width:100%; display: flex; flex-direction: column; gap: 15px; padding: 20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:10px;">
+                <h3 style="color:var(--primary); margin:0; font-size:16px;">✏️ زیادکردنی تێبینی</h3>
+                <span style="color:var(--danger); cursor:pointer; font-weight:bold; font-size:20px;" onclick="closeNoteModal()">✕</span>
+            </div>
+            
+            <div style="display:flex; flex-wrap:wrap; gap:6px;" id="quickNotes">
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('برنجی درێژ')">برنجی درێژ</button>
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('برنجی خڕ')">برنجی خڕ</button>
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('برنجی کوردی')">برنجی کوردی</button>
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('برنج بە سرکە')">برنج بە سرکە</button>
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('روبەهەنار')">روبەهەنار</button>
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('قەرەخەرمان')">قەرەخەرمان</button>
+                
+                <button type="button" class="btn-quick-note qn-chicken" onclick="addNoteText('سینگ')">سینگ</button>
+                <button type="button" class="btn-quick-note qn-chicken" onclick="addNoteText('ڕان')">ڕان</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('بێ پیاز')">بێ پیاز</button>
+                
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ١')">قاپی ١</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٢')">قاپی ٢</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٣')">قاپی ٣</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٤')">قاپی ٤</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٥')">قاپی ٥</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٦')">قاپی ٦</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٧')">قاپی ٧</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٨')">قاپی ٨</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٩')">قاپی ٩</button>
+            </div>
+
+            <!-- Numpad for Fish Weight -->
+            <div id="fishWeightSection" style="display:none; flex-direction:column; gap:10px;">
+                <label style="color:var(--primary); font-size:14px; font-weight:bold; text-align:center;">کێش دیاری بکە (کیلۆگڕام):</label>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <input type="text" id="fishWeightInput" readonly style="flex:1; background:var(--bg); border:1px solid var(--border); color:#fff; padding:12px; border-radius:8px; font-size:20px; text-align:center; font-weight:bold;">
+                    <button class="btn-num" style="background:var(--danger); padding:12px 20px;" onclick="document.getElementById('fishWeightInput').value=''">C</button>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:10px;">
+                    <button type="button" class="btn-num" onclick="appendNum('1')">1</button>
+                    <button type="button" class="btn-num" onclick="appendNum('2')">2</button>
+                    <button type="button" class="btn-num" onclick="appendNum('3')">3</button>
+                    <button type="button" class="btn-num" onclick="appendNum('4')">4</button>
+                    <button type="button" class="btn-num" onclick="appendNum('5')">5</button>
+                    <button type="button" class="btn-num" onclick="appendNum('6')">6</button>
+                    <button type="button" class="btn-num" onclick="appendNum('7')">7</button>
+                    <button type="button" class="btn-num" onclick="appendNum('8')">8</button>
+                    <button type="button" class="btn-num" onclick="appendNum('9')">9</button>
+                    <button type="button" class="btn-num" onclick="appendNum('.')">.</button>
+                    <button type="button" class="btn-num" onclick="appendNum('0')">0</button>
+                    <button type="button" class="btn-num" onclick="appendNum('00')">00</button>
+                </div>
+            </div>
+
+            <input type="text" id="customNoteInput" class="c-input" placeholder="یان لێرە بە دەست بنووسە..." style="padding:12px; width:100%; background:var(--bg); border:1px solid var(--border); color:#fff; border-radius:8px; font-family:inherit; margin-top:10px;">
+            
+            <button style="background:var(--accent); color:#000; padding:12px; border:none; border-radius:10px; font-weight:bold; font-size:15px; width:100%; cursor:pointer; margin-top:5px;" onclick="saveNote()">تۆمارکردن</button>
         </div>
     </div>
 
@@ -1147,6 +1284,7 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
 
     <script>
         let cart = [], orig = []; const tbl = "{{ selected_table }}";
+        let editingNoteIdx = -1;
 
         window.addEventListener('langChanged', () => {
             let l = window.savedLang;
@@ -1162,34 +1300,14 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
         }
 
         function addF(n, p, c, id) {
-            let fn = n, pts = [];
-            let isFish = c.includes('ماسی') || n.includes('ماسی');
-            
-            let rel = document.getElementById('r_'+id), cel = document.getElementById('c_'+id), gel = document.getElementById('g_'+id);
-            if(rel && rel.value) pts.push(rel.value);
-            if(cel && cel.value) pts.push(cel.value);
-            if(gel && gel.value) pts.push(gel.value);
-            
-            let pcsEl = document.getElementById('pcs_'+id);
-            if(pcsEl && pcsEl.value && isFish) pts.push(pcsEl.value + ' دانە');
-
-            if(pts.length>0) fn += ` (${pts.join(' - ')})`;
-            
-            let qtyToAdd = 1;
-            let wEl = document.getElementById('w_'+id);
-            if(wEl && wEl.value && isFish) {
-                let w = parseFloat(wEl.value);
-                if(!isNaN(w) && w > 0) qtyToAdd = w;
-            }
-
+            let fn = n;
             let fd = false;
-            if(!isFish) {
-                for(let i=cart.length-1; i>=0; i--) {
-                    if(cart[i].is_divider) break;
-                    if(cart[i].ku === fn) { cart[i].qty += qtyToAdd; fd=true; break; }
-                }
+            
+            for(let i=cart.length-1; i>=0; i--) {
+                if(cart[i].is_divider) break;
+                if(cart[i].ku === fn) { cart[i].qty += 1; fd=true; break; }
             }
-            if(!fd) cart.push({is_divider:false, ku:fn, full_name:fn, price:p, qty:qtyToAdd, cat:c});
+            if(!fd) cart.push({is_divider:false, ku:fn, full_name:fn, price:p, qty:1, cat:c});
             ren();
         }
 
@@ -1202,13 +1320,66 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
         }
         function delI(idx) { cart.splice(idx, 1); ren(); }
 
+        function appendNum(val) {
+            let inp = document.getElementById('fishWeightInput');
+            if (val === '.' && inp.value.includes('.')) return;
+            inp.value += val;
+        }
+
         function editNote(idx) {
-            let note = prompt('تێبینی (بۆ نموونە: بێ پیاز):');
-            if (note && note.trim() !== '') {
-                cart[idx].ku += ' (' + note.trim() + ')';
-                cart[idx].full_name = cart[idx].ku;
+            editingNoteIdx = idx;
+            document.getElementById('customNoteInput').value = '';
+            
+            let cat = cart[idx].cat || '';
+            let n = cart[idx].ku || '';
+            let isGrill = cat.includes('برژاو') || n.includes('کەباب') || n.includes('تکە');
+            let isPoultry = cat.includes('پەلەوەر') || n.includes('مریشک');
+            let isBoiled = cat.includes('کوڵاو') || cat.includes('کورد') || cat.includes('شۆربا');
+            let isFish = cat.includes('ماسی') || n.includes('ماسی');
+
+            if (isFish) {
+                document.getElementById('quickNotes').style.display = 'none';
+                document.getElementById('fishWeightSection').style.display = 'flex';
+                document.getElementById('fishWeightInput').value = cart[idx].qty;
+            } else {
+                document.getElementById('fishWeightSection').style.display = 'none';
+                document.getElementById('quickNotes').style.display = 'flex';
+                document.querySelectorAll('#quickNotes .btn-quick-note').forEach(b => {
+                    b.style.display = 'none';
+                    if (isGrill && b.classList.contains('qn-grill')) b.style.display = '';
+                    if (isPoultry && (b.classList.contains('qn-rice') || b.classList.contains('qn-chicken'))) b.style.display = '';
+                    if (isBoiled && !isPoultry && b.classList.contains('qn-rice')) b.style.display = '';
+                    if (!isGrill && !isPoultry && !isBoiled && !isFish) b.style.display = '';
+                });
+            }
+            
+            document.getElementById('noteModal').style.display = 'flex';
+        }
+        function closeNoteModal() {
+            document.getElementById('noteModal').style.display = 'none';
+            editingNoteIdx = -1;
+        }
+        function addNoteText(txt) {
+            let inp = document.getElementById('customNoteInput');
+            inp.value = inp.value ? inp.value + ' - ' + txt : txt;
+        }
+        function saveNote() {
+            if (editingNoteIdx > -1) {
+                let note = document.getElementById('customNoteInput').value;
+                if (note && note.trim() !== '') {
+                    cart[editingNoteIdx].ku += ' (' + note.trim() + ')';
+                    cart[editingNoteIdx].full_name = cart[editingNoteIdx].ku;
+                }
+                
+                if (document.getElementById('fishWeightSection').style.display !== 'none') {
+                    let w = parseFloat(document.getElementById('fishWeightInput').value);
+                    if (!isNaN(w) && w > 0) {
+                        cart[editingNoteIdx].qty = w;
+                    }
+                }
                 ren();
             }
+            closeNoteModal();
         }
 
         function addDiv() {
@@ -1279,6 +1450,48 @@ DESKTOP_TEMPLATE = COMMON_HEAD + """
                 ren();
             }
         });
+
+        function startVoiceAPI() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) return alert("بەداخەوە وێبگەڕەکەت پشتگیری ئەم تایبەتمەندییە ناکات.");
+            
+            const rec = new SpeechRecognition();
+            rec.lang = 'ar-IQ';
+            
+            let toast = document.getElementById('toastMsg') || document.getElementById('toast');
+            
+            rec.onstart = () => {
+                if(toast) { toast.innerText = "🎤 قسە بکە..."; toast.style.display = 'block'; toast.style.background = '#3b82f6'; }
+            };
+            
+            rec.onresult = (e) => {
+                let text = e.results[0][0].transcript;
+                if(toast) { toast.innerText = "⏳ چاوەڕێبە... (AI بیردەکاتەوە)"; toast.style.background = '#f59e0b'; }
+                
+                fetch('/api/voice_order', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: text})
+                })
+                .then(r => r.json())
+                .then(d => {
+                    if(d.status === 'success') {
+                        d.orders.forEach(o => {
+                            if (typeof addF === 'function' && addF.length === 4) {
+                                for(let i=0; i<o.qty; i++) addF(o.food_name, o.price, o.category, o.id);
+                            } else if (typeof addF === 'function' && addF.length === 5) {
+                                addF(o.food_name, o.qty, o.price, o.category, o.id);
+                            }
+                        });
+                        if(toast) { toast.innerText = "✅ زیادکرا"; toast.style.background = 'var(--accent)'; setTimeout(()=>toast.style.display='none', 2000); }
+                    } else {
+                        alert("کێشەیەک ڕوویدا: " + d.message);
+                        if(toast) toast.style.display = 'none';
+                    }
+                });
+            };
+            rec.start();
+        }
     </script>
 </body>
 </html>
@@ -1302,15 +1515,13 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
         .c-btn.act { border-color: var(--primary); background: rgba(0,0,0,0.3); color: var(--primary); }
         .cat-visual-img { width: 50px; height: 50px; border-radius: 8px; object-fit: cover; margin-bottom: 5px; }
         
-        .f-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 15px; grid-auto-rows: minmax(300px, auto); }
-        .f-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; display: flex; flex-direction: column; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.15); transition: transform 0.2s, box-shadow 0.2s; }
-        .f-img { width: 100%; height: 140px; object-fit: cover; border-radius: 10px; margin-bottom: 10px; flex-shrink: 0; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        .f-name { font-size: 13px; font-weight: bold; margin-bottom: 4px; }
+        .f-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 15px; }
+        .f-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; display: flex; flex-direction: column; justify-content: flex-start; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.15); transition: transform 0.2s; }
+        .f-img { width: 100%; height: 120px; object-fit: cover; border-radius: 10px; margin-bottom: 8px; flex-shrink: 0; }
+        .f-name { font-size: 13px; font-weight: bold; margin-bottom: 4px; line-height: 1.3; }
         .f-price { color: var(--accent); font-weight: bold; font-size: 12px; margin-bottom: 8px; }
         
-        .opt-select { flex: 1 1 45%; min-width: 0; background: var(--bg); border: 1px solid var(--border); color: var(--primary); border-radius: 6px; padding: 5px; font-size: 11px; outline: none; text-overflow: ellipsis; }
-        
-        .stp { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 2px; margin-top: 8px; }
+        .stp { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 2px; }
         .s-btn { width: 30px; height: 30px; border: none; border-radius: 6px; background: #334155; color: #fff; font-weight: bold; font-size: 18px; }
         .s-btn.add { background: var(--primary); color: #000; }
         .btm-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card); padding: 15px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; z-index: 200; }
@@ -1323,11 +1534,14 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
         
         .wl-lang-btn { background: var(--card); border: 2px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 10px; font-weight: bold; font-size:14px; cursor:pointer; }
         .wl-lang-btn.active { border-color: var(--primary); background: rgba(0,0,0,0.3); color: var(--primary); }
+        
+        /* Modal for Notes */
+        .modal-note { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
     </style>
 </head>
 <body>
     <div id="welcomeOverlay" style="position:fixed; inset:0; background:var(--bg); z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px;">
-        <h1 style="color:var(--primary); margin-bottom:10px;">✨ چێشتماڵە</h1>
+        <h1 style="color:var(--primary); margin-bottom:10px;">✨ دیوانی سوڵتان</h1>
         <h3 style="color:var(--text); margin-bottom:30px; font-size:16px;">بەخێربێیت بۆ مێزی {{ table_num }}</h3>
         
         <p style="color:var(--text); margin-bottom:15px; font-size:14px;">تکایە زمانێک هەڵبژێرە / Select Language</p>
@@ -1342,7 +1556,7 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
 
     <div id="toast">✅ نێردرا</div>
     <div class="hdr">
-        <span style="font-weight:bold; color:var(--primary);">چێشتماڵە</span>
+        <span style="font-weight:bold; color:var(--primary);">دیوانی سوڵتان</span>
         <span class="pill">{{ table_num }}</span>
     </div>
     {% if not allow_ordering %}
@@ -1371,26 +1585,6 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
             <div class="f-name food-title-disp" data-ku="{{ it.food_name }}" data-ar="{{ it.food_name_ar or it.food_name }}" data-en="{{ it.food_name_en or it.food_name }}">{{ it.food_name }}</div>
             <div class="f-price">{{ "{:,.0f}".format(it.price) }}</div>
             {% if allow_ordering %}
-            {% set c_name = (it.category or '') | replace('ي', 'ی') | trim %}
-            {% set show_fish = ('ماسی' in c_name or 'ماسی' in it.food_name) %}
-            {% set show_r = ('کوڵاو' in c_name or 'پەلەوەر' in c_name or 'کورد' in c_name) %}
-            {% set show_c = ('پەلەوەر' in c_name or 'مریشک' in c_name) %}
-            {% set show_grill = ('برژاو' in c_name) %}
-            
-            {% if show_r or show_c or show_fish or show_grill %}
-                <div style="display:flex; gap:4px; width:100%; flex-wrap:wrap; margin-top:auto; padding-top:6px;">
-                    {% if show_fish %}
-                    <div style="display:flex; flex-direction:row; gap:4px; width:100%; flex-wrap:nowrap;">
-                        <input type="number" id="pcs_{{it.id}}" class="opt-select" style="flex:1; min-width:0;" step="1" min="1" value="1" onclick="event.stopPropagation()" placeholder="دانە">
-                        <input type="number" id="w_{{it.id}}" class="opt-select" style="flex:1; min-width:0;" step="0.25" min="0.25" value="1" onclick="event.stopPropagation()" placeholder="کێش/کیلۆ">
-                    </div>
-                    {% endif %}
-                    {% if show_r %}<select class="opt-select" id="rm_{{it.id}}"><option value="">ج. برنج</option><option value="درێژ">درێژ</option><option value="خڕ">خڕ</option><option value="کوردی">کوردی</option></select>{% endif %}
-                    {% if show_c %}<select class="opt-select" id="cm_{{it.id}}"><option value="">ب. مریشک</option><option value="سینگ">سینگ</option><option value="ڕان">ڕان</option></select>{% endif %}
-                    {% if show_grill %}<select class="opt-select" id="gm_{{it.id}}"><option value="">قاپەکان</option>{% for i in range(1, 10) %}<option value="قاپی {{ i }}">قاپی {{ i }}</option>{% endfor %}</select>{% endif %}
-                </div>
-            {% endif %}
-            
             <div class="stp" style="margin-top:auto;">
                 <button class="s-btn" onclick="addF('{{ it.food_name | replace("'", "\\'") }}',-1,{{it.price}},'{{it.category}}',{{it.id}})">-</button>
                 <span style="font-weight:bold; font-size:14px;" data-name="{{it.food_name}}" class="qty-lbl">0</span>
@@ -1421,14 +1615,76 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
             <div class="m-list" id="mList"></div>
             <div style="display:flex; gap:10px;">
                 <button class="btn-send" style="background:#8b5cf6; flex:1; display:none; color:#fff;" id="btnDivM" onclick="addDivM()">+ هێڵ</button>
+                <button type="button" class="btn-send" style="background:#3b82f6; color:#fff; flex:1;" onclick="startVoiceAPI()">🎤 دەنگی</button>
                 <button class="btn-send" style="flex:2;" onclick="sendOrder()" data-tr="send">ناردن بۆ مەتبەخ</button>
             </div>
+        </div>
+    </div>
+    
+    <!-- Note Modal -->
+    <div class="modal-note" id="noteModal">
+        <div class="m-box" style="background:var(--card); border:1px solid var(--border); border-radius:16px; max-width: 400px; width:100%; display: flex; flex-direction: column; gap: 15px; padding: 20px; margin:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:10px;">
+                <h3 style="color:var(--primary); margin:0; font-size:16px;">✏️ زیادکردنی تێبینی</h3>
+                <span style="color:var(--danger); cursor:pointer; font-weight:bold; font-size:20px;" onclick="closeNoteModal()">✕</span>
+            </div>
+            
+            <div style="display:flex; flex-wrap:wrap; gap:6px;" id="quickNotes">
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('برنجی درێژ')">برنجی درێژ</button>
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('برنجی خڕ')">برنجی خڕ</button>
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('برنجی کوردی')">برنجی کوردی</button>
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('برنج بە سرکە')">برنج بە سرکە</button>
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('روبەهەنار')">روبەهەنار</button>
+                <button type="button" class="btn-quick-note qn-rice" onclick="addNoteText('قەرەخەرمان')">قەرەخەرمان</button>
+                
+                <button type="button" class="btn-quick-note qn-chicken" onclick="addNoteText('سینگ')">سینگ</button>
+                <button type="button" class="btn-quick-note qn-chicken" onclick="addNoteText('ڕان')">ڕان</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('بێ پیاز')">بێ پیاز</button>
+                
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ١')">قاپی ١</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٢')">قاپی ٢</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٣')">قاپی ٣</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٤')">قاپی ٤</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٥')">قاپی ٥</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٦')">قاپی ٦</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٧')">قاپی ٧</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٨')">قاپی ٨</button>
+                <button type="button" class="btn-quick-note qn-grill" onclick="addNoteText('قاپی ٩')">قاپی ٩</button>
+            </div>
+
+            <!-- Numpad for Fish Weight -->
+            <div id="fishWeightSection" style="display:none; flex-direction:column; gap:10px;">
+                <label style="color:var(--primary); font-size:14px; font-weight:bold; text-align:center;">کێش دیاری بکە (کیلۆگڕام):</label>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <input type="text" id="fishWeightInput" readonly style="flex:1; background:var(--bg); border:1px solid var(--border); color:#fff; padding:12px; border-radius:8px; font-size:20px; text-align:center; font-weight:bold;">
+                    <button class="btn-num" style="background:var(--danger); padding:12px 20px;" onclick="document.getElementById('fishWeightInput').value=''">C</button>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:10px;">
+                    <button type="button" class="btn-num" onclick="appendNum('1')">1</button>
+                    <button type="button" class="btn-num" onclick="appendNum('2')">2</button>
+                    <button type="button" class="btn-num" onclick="appendNum('3')">3</button>
+                    <button type="button" class="btn-num" onclick="appendNum('4')">4</button>
+                    <button type="button" class="btn-num" onclick="appendNum('5')">5</button>
+                    <button type="button" class="btn-num" onclick="appendNum('6')">6</button>
+                    <button type="button" class="btn-num" onclick="appendNum('7')">7</button>
+                    <button type="button" class="btn-num" onclick="appendNum('8')">8</button>
+                    <button type="button" class="btn-num" onclick="appendNum('9')">9</button>
+                    <button type="button" class="btn-num" onclick="appendNum('.')">.</button>
+                    <button type="button" class="btn-num" onclick="appendNum('0')">0</button>
+                    <button type="button" class="btn-num" onclick="appendNum('00')">00</button>
+                </div>
+            </div>
+
+            <input type="text" id="customNoteInput" class="c-input" placeholder="یان لێرە بە دەست بنووسە..." style="padding:12px; width:100%; background:var(--bg); border:1px solid var(--border); color:#fff; border-radius:8px; font-family:inherit; margin-top:10px;">
+            
+            <button style="background:var(--accent); color:#000; padding:12px; border:none; border-radius:10px; font-weight:bold; font-size:15px; width:100%; cursor:pointer; margin-top:5px;" onclick="saveNote()">تۆمارکردن</button>
         </div>
     </div>
     {% endif %}
 
     <script>
         let cart=[], orig=[]; const tbl="{{ table_num }}"; const isW=location.href.includes('/mobile/menu');
+        let editingNoteIdx = -1;
 
         let tempWL = localStorage.getItem('lang') || 'ku';
         function selWLang(l, btn) {
@@ -1464,40 +1720,18 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
 
         function addF(n, d, p, c, id) {
             let fn = n;
-            let isFish = c.includes('ماسی') || n.includes('ماسی');
-            let rel = document.getElementById('rm_'+id), cel = document.getElementById('cm_'+id), gel = document.getElementById('gm_'+id);
-            let pcsEl = document.getElementById('pcs_'+id);
-            
-            let pts = [];
-            if(rel && rel.value) pts.push(rel.value);
-            if(cel && cel.value) pts.push(cel.value);
-            if(gel && gel.value) pts.push(gel.value);
-            if(pcsEl && pcsEl.value && isFish) pts.push(pcsEl.value + ' دانە');
-            
-            if(pts.length>0) fn += ` (${pts.join(' - ')})`;
-            
             let qtyToAdd = d;
-            let wEl = document.getElementById('w_'+id);
-            if(wEl && wEl.value && isFish) {
-                let w = parseFloat(wEl.value);
-                if(!isNaN(w) && w > 0) {
-                    qtyToAdd = d > 0 ? w : -w;
-                }
-            }
-
             let oQ = orig.find(o=>o.ku===fn && !o.is_divider); oQ = oQ?oQ.qty:0;
             let f = false;
             
-            if(!isFish) {
-                for(let i=cart.length-1; i>=0; i--) {
-                    if(cart[i].is_divider) break;
-                    if(cart[i].ku === fn) {
-                        let nQ = cart[i].qty + qtyToAdd;
-                        if(!isW && nQ < oQ) return alert("ناتوانیت داواکاری پێشوو کەم بکەیتەوە!");
-                        cart[i].qty = nQ;
-                        if(cart[i].qty<=0) cart.splice(i,1);
-                        f=true; break;
-                    }
+            for(let i=cart.length-1; i>=0; i--) {
+                if(cart[i].is_divider) break;
+                if(cart[i].ku === fn) {
+                    let nQ = cart[i].qty + qtyToAdd;
+                    if(!isW && nQ < oQ) return alert("ناتوانیت داواکاری پێشوو کەم بکەیتەوە!");
+                    cart[i].qty = nQ;
+                    if(cart[i].qty<=0) cart.splice(i,1);
+                    f=true; break;
                 }
             }
             
@@ -1518,13 +1752,75 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
 
         function delI(i) { cart.splice(i, 1); ren(); }
         
-        function edtM(i) { 
-            let n=prompt('تێبینی (بۆ نموونە: بێ پیاز):'); 
-            if(n && n.trim() !== '') {
-                cart[i].ku += ` (${n.trim()})`;
-                cart[i].full_name = cart[i].ku; 
+        function appendNum(val) {
+            let inp = document.getElementById('fishWeightInput');
+            if (val === '.' && inp.value.includes('.')) return;
+            inp.value += val;
+        }
+
+        function editNote(idx) {
+            editingNoteIdx = idx;
+            document.getElementById('customNoteInput').value = '';
+            
+            let cat = cart[idx].cat || '';
+            let n = cart[idx].ku || '';
+            let isGrill = cat.includes('برژاو') || n.includes('کەباب') || n.includes('تکە');
+            let isPoultry = cat.includes('پەلەوەر') || n.includes('مریشک');
+            let isBoiled = cat.includes('کوڵاو') || cat.includes('کورد') || cat.includes('شۆربا');
+            let isFish = cat.includes('ماسی') || n.includes('ماسی');
+
+            if (isFish) {
+                document.getElementById('quickNotes').style.display = 'none';
+                document.getElementById('fishWeightSection').style.display = 'flex';
+                document.getElementById('fishWeightInput').value = cart[idx].qty;
+            } else {
+                document.getElementById('fishWeightSection').style.display = 'none';
+                document.getElementById('quickNotes').style.display = 'flex';
+                document.querySelectorAll('#quickNotes .btn-quick-note').forEach(b => {
+                    b.style.display = 'none';
+                    if (isGrill && b.classList.contains('qn-grill')) b.style.display = '';
+                    if (isPoultry && (b.classList.contains('qn-rice') || b.classList.contains('qn-chicken'))) b.style.display = '';
+                    if (isBoiled && !isPoultry && b.classList.contains('qn-rice')) b.style.display = '';
+                    if (!isGrill && !isPoultry && !isBoiled && !isFish) b.style.display = '';
+                });
+            }
+            
+            document.getElementById('noteModal').style.display = 'flex';
+        }
+        
+        function closeNoteModal() {
+            document.getElementById('noteModal').style.display = 'none';
+            editingNoteIdx = -1;
+        }
+        
+        function addNoteText(txt) {
+            let inp = document.getElementById('customNoteInput');
+            inp.value = inp.value ? inp.value + ' - ' + txt : txt;
+        }
+        
+        function saveNote() {
+            if (editingNoteIdx > -1) {
+                let note = document.getElementById('customNoteInput').value;
+                if (note && note.trim() !== '') {
+                    cart[editingNoteIdx].ku += ' (' + note.trim() + ')';
+                    cart[editingNoteIdx].full_name = cart[editingNoteIdx].ku;
+                }
+                
+                if (document.getElementById('fishWeightSection').style.display !== 'none') {
+                    let w = parseFloat(document.getElementById('fishWeightInput').value);
+                    if (!isNaN(w) && w > 0) {
+                        let oQ = orig.find(o=>o.ku===cart[editingNoteIdx].ku && !o.is_divider); 
+                        oQ = oQ ? oQ.qty : 0;
+                        if (!isW && w < oQ) {
+                            alert("ناتوانیت داواکاری پێشوو کەم بکەیتەوە!");
+                        } else {
+                            cart[editingNoteIdx].qty = w;
+                        }
+                    }
+                }
                 ren();
-            } 
+            }
+            closeNoteModal();
         }
 
         function addDivM() { 
@@ -1548,7 +1844,7 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
                         <div style="display:flex; align-items:center; gap:6px;">
                             <span style="color:var(--accent); font-size:12px; font-weight:bold;">${(it.price*it.qty).toLocaleString()}</span>
                             <button class="s-btn" style="background:#ef4444; font-size:12px;" onclick="delI(${i})">🗑</button>
-                            <button class="s-btn" style="background:#3b82f6; font-size:12px;" onclick="edtM(${i})">✏</button>
+                            <button class="s-btn" style="background:#3b82f6; font-size:12px;" onclick="editNote(${i})">✏</button>
                             <button class="s-btn" onclick="updQ(${i},-1)">-</button>
                             <span style="width:30px; text-align:center; font-weight:bold; background:rgba(255,255,255,0.1); border-radius:4px; padding:2px;">${parseFloat(it.qty.toFixed(3))}</span>
                             <button class="s-btn add" onclick="updQ(${i},1)">+</button>
@@ -1590,6 +1886,48 @@ CUSTOMER_MENU_TEMPLATE = COMMON_HEAD + """
             });
         }
         window.onload = fetchTable;
+
+        function startVoiceAPI() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) return alert("بەداخەوە وێبگەڕەکەت پشتگیری ئەم تایبەتمەندییە ناکات.");
+            
+            const rec = new SpeechRecognition();
+            rec.lang = 'ar-IQ';
+            
+            let toastMsg = document.getElementById('toastMsg') || document.getElementById('toast');
+            
+            rec.onstart = () => {
+                if(toastMsg) { toastMsg.innerText = "🎤 قسە بکە..."; toastMsg.style.display = 'block'; toastMsg.style.background = '#3b82f6'; }
+            };
+            
+            rec.onresult = (e) => {
+                let text = e.results[0][0].transcript;
+                if(toastMsg) { toastMsg.innerText = "⏳ چاوەڕێبە... (AI بیردەکاتەوە)"; toastMsg.style.background = '#f59e0b'; }
+                
+                fetch('/api/voice_order', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: text})
+                })
+                .then(r => r.json())
+                .then(d => {
+                    if(d.status === 'success') {
+                        d.orders.forEach(o => {
+                            if (typeof addF === 'function' && addF.length === 4) {
+                                for(let i=0; i<o.qty; i++) addF(o.food_name, o.price, o.category, o.id);
+                            } else if (typeof addF === 'function' && addF.length === 5) {
+                                addF(o.food_name, o.qty, o.price, o.category, o.id);
+                            }
+                        });
+                        if(toastMsg) { toastMsg.innerText = "✅ زیادکرا"; toastMsg.style.background = 'var(--accent)'; setTimeout(()=>toastMsg.style.display='none', 2000); }
+                    } else {
+                        alert("کێشەیەک ڕوویدا: " + d.message);
+                        if(toastMsg) toastMsg.style.display = 'none';
+                    }
+                });
+            };
+            rec.start();
+        }
     </script>
 </body>
 </html>
@@ -1927,7 +2265,8 @@ def admin_complete_payment():
             cur.execute("SELECT food_name, quantity, price FROM froshtn WHERE table_cabin = %s", (t_num,))
             items = cur.fetchall()
             p_id = t_num if ('سەفەری' in t_num or t_num.startswith('m')) else f"m{t_num}"
-            cur.execute("INSERT INTO qasa (place_id, amount, discount) VALUES (%s, %s, %s)", (p_id, paid, disc))
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cur.execute("INSERT INTO qasa (transaction_time, place_id, amount, discount) VALUES (%s, %s, %s, %s)", (current_time, p_id, paid, disc))
             cur.execute("DELETE FROM froshtn WHERE table_cabin = %s OR table_cabin LIKE %s", (t_num, f"{t_num} [%"))
         conn.commit()
         return jsonify({'status': 'success', 'receipt': {'table': t_num, 'items': items, 'total': tot, 'paid': paid}})
@@ -1977,9 +2316,8 @@ def admin_add_food():
     if 'food_image' in request.files:
         f = request.files['food_image']
         if f.filename != '':
-            fn = secure_filename(f"{int(datetime.now().timestamp())}_{f.filename}")
-            f.save(os.path.join(app.config['UPLOAD_FOLDER'], fn))
-            img = url_for('static', filename=f'uploads/{fn}')
+            img_b64 = base64.b64encode(f.read()).decode('utf-8')
+            img = f"data:{f.mimetype};base64,{img_b64}"
             
     conn = get_db()
     try:
@@ -2001,9 +2339,8 @@ def admin_edit_food(fid):
     final_img = None
     if 'food_image' in request.files and request.files['food_image'].filename != '':
         f = request.files['food_image']
-        fn = secure_filename(f"{int(datetime.now().timestamp())}_{f.filename}")
-        f.save(os.path.join(app.config['UPLOAD_FOLDER'], fn))
-        final_img = url_for('static', filename=f'uploads/{fn}')
+        img_b64 = base64.b64encode(f.read()).decode('utf-8')
+        final_img = f"data:{f.mimetype};base64,{img_b64}"
     elif img_link != '':
         final_img = img_link
 
@@ -2140,13 +2477,14 @@ def save_cart_order():
         parsed = {}
         plate_idx = 1
         for it in items_list:
-            fname = str(it.get('full_name') or it.get('food_name') or '')
-            is_div = it.get('is_divider') or 'قاپی نوێ' in fname or '───' in fname
+            fname = str(it.get('ku') or it.get('full_name') or it.get('food_name') or '')
+            is_div = it.get('is_divider') or 'قاپی نوێ' in fname or '───' in fname or '---' in fname
             if is_div:
                 plate_idx += 1
             else:
                 key = f"{fname}__P{plate_idx}"
-                if key not in parsed: parsed[key] = {'real_name': fname, 'qty': 0, 'price': float(it.get('price', 0)), 'cat': it.get('cat', 'گشتی')}
+                if key not in parsed: 
+                    parsed[key] = {'real_name': fname, 'qty': 0, 'price': float(it.get('price', 0)), 'cat': it.get('cat', 'گشتی')}
                 parsed[key]['qty'] += float(it.get('qty', 1))
         return parsed
 
@@ -2162,22 +2500,28 @@ def save_cart_order():
                 if p_row and not p_row['allow_ordering'] and session.get('role') not in ['mobile_waiter', 'admin']:
                     return jsonify({'status': 'error', 'message': 'تەنها بۆ بینینە'})
 
+            # سڕینەوەی داتای کۆنی مێزەکە و دانانەوەی سەبەتە نوێیەکە بۆ لای کاشێر
             cur.execute("DELETE FROM froshtn WHERE table_cabin = %s", (tbl,))
             for it in cart:
                 fname = str(it.get('ku') or it.get('full_name') or it.get('food_name') or '')
-                is_div = it.get('is_divider') or 'قاپی نوێ' in fname or '───' in fname
-                final_name = "─── قاپی نوێ ───" if is_div else fname
-                cur.execute("INSERT INTO froshtn (table_cabin, food_name, quantity, price, category, created_at, is_printed) VALUES (%s, %s, %s, %s, %s, NOW(), 1)", (tbl, final_name, float(it.get('qty', 1)), float(it.get('price', 0)), it.get('cat', 'گشتی')))
+                is_div = it.get('is_divider') or 'قاپی نوێ' in fname or '───' in fname or '---' in fname
+                final_name = "-----------------" if is_div else fname
+                cur.execute("""
+                    INSERT INTO froshtn (table_cabin, food_name, quantity, price, category, created_at, is_printed) 
+                    VALUES (%s, %s, %s, %s, %s, NOW(), 1)
+                """, (tbl, final_name, float(it.get('qty', 1)), float(it.get('price', 0)), it.get('cat', 'گشتی')))
 
+            # ئامادەکردنی لیستی مەتبەخ بۆ پرێنتکردن (is_printed = 0)
             kitchen_inserts = []
             plate_idx = 1
             current_plate_printed = False
 
             for it in cart:
                 fname = str(it.get('ku') or it.get('full_name') or it.get('food_name') or '')
-                is_div = it.get('is_divider') or 'قاپی نوێ' in fname or '───' in fname
+                is_div = it.get('is_divider') or 'قاپی نوێ' in fname or '───' in fname or '---' in fname
                 if is_div:
-                    plate_idx += 1; current_plate_printed = False
+                    plate_idx += 1
+                    current_plate_printed = False
                 else:
                     key = f"{fname}__P{plate_idx}"
                     new_qty = float(it.get('qty', 1))
@@ -2185,24 +2529,47 @@ def save_cart_order():
                     diff = new_qty - old_qty
                     if diff > 0:
                         if plate_idx > 1 and not current_plate_printed:
-                            kitchen_inserts.append({'name': '─── قاپی نوێ ───', 'qty': 1, 'price': 0, 'cat': 'برژاو', 'action': 'add'})
+                            kitchen_inserts.append({
+                                'name': '-----------------', 
+                                'qty': 1, 
+                                'price': 0, 
+                                'cat': it.get('cat', 'برژاو'), 
+                                'action': 'add'
+                            })
                             current_plate_printed = True
-                        kitchen_inserts.append({'name': f"+ {fname}", 'qty': diff, 'price': float(it.get('price', 0)), 'cat': it.get('cat', 'گشتی'), 'action': 'add'})
+                        kitchen_inserts.append({
+                            'name': f"+ {fname}", 
+                            'qty': diff, 
+                            'price': float(it.get('price', 0)), 
+                            'cat': it.get('cat', 'گشتی'), 
+                            'action': 'add'
+                        })
 
             for k, old_data in old_map.items():
                 new_qty = new_map.get(k, {}).get('qty', 0)
                 diff = new_qty - old_data['qty']
                 if diff < 0:
-                    kitchen_inserts.append({'name': f"سڕاوەتەوە: {old_data['real_name']}", 'qty': abs(diff), 'price': old_data['price'], 'cat': old_data['cat'], 'action': 'delete'})
+                    kitchen_inserts.append({
+                        'name': f"سڕاوەتەوە: {old_data['real_name']}", 
+                        'qty': abs(diff), 
+                        'price': old_data['price'], 
+                        'cat': old_data['cat'], 
+                        'action': 'delete'
+                    })
 
             for ki in kitchen_inserts:
                 tbl_suffix = " [زیادکراو]" if ki['action'] == 'add' else " [سڕاوەتەوە]"
-                cur.execute("INSERT INTO froshtn (table_cabin, food_name, quantity, price, category, created_at, is_printed) VALUES (%s, %s, %s, %s, %s, NOW(), 0)", (tbl + tbl_suffix, ki['name'], float(ki['qty']), float(ki['price']), ki['cat']))
+                cur.execute("""
+                    INSERT INTO froshtn (table_cabin, food_name, quantity, price, category, created_at, is_printed) 
+                    VALUES (%s, %s, %s, %s, %s, NOW(), 0)
+                """, (tbl + tbl_suffix, ki['name'], float(ki['qty']), float(ki['price']), ki['cat']))
 
         conn.commit()
         return jsonify({'status': 'success'})
-    except Exception as ex: return jsonify({'status': 'error', 'message': str(ex)})
-    finally: conn.close()
+    except Exception as ex: 
+        return jsonify({'status': 'error', 'message': str(ex)})
+    finally: 
+        conn.close()
 
 @app.route('/get_table_orders/<path:table_num>')
 def get_table_orders(table_num):
@@ -2248,6 +2615,63 @@ def transfer_table_orders():
         return jsonify({'status': 'success'})
     except Exception as ex: return jsonify({'status': 'error', 'message': str(ex)})
     finally: conn.close()
+
+# ڕاوتی نوێ بۆ API ی دەنگی (Voice Order)
+@app.route('/api/voice_order', methods=['POST'])
+def voice_order():
+    data = request.get_json()
+    text = data.get('text', '')
+    
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, food_name, price, category FROM nse WHERE food_name != ''")
+            menu_items = cur.fetchall()
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        conn.close()
+        
+    menu_names = [item['food_name'] for item in menu_items]
+    
+    prompt = f"""تۆ یاریدەدەرێکی کاشێریت لە چێشتخانەیەک. ئەم دەقەی خوارەوە لەلایەن گارسۆنێکەوە گوتراوە بۆ داواکردنی خواردن.
+    ئەرکی تۆ ئەوەیە ناوی خواردنەکان و بڕەکەیان دەربهێنیت. پێویستە ناوەکان بە نزیکترین شێوە بگونجێنیت لەگەڵ ئەم لیستەی مێنیوی ئێمەدا: {menu_names}
+    ئەنجامەکە تەنها بەم فۆرماتەی JSON بگەڕێنەوە بەبێ هیچ قسە و دەقێکی تر، تەنها و تەنها ئەڕەیەکە:
+    [{{\"food_name\": \"کەباب\", \"qty\": 2}}]
+    
+    دەقە گوتراوەکە: {text}"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        
+        if result_text.startswith("```json"):
+            result_text = result_text[7:-3]
+        elif result_text.startswith("```"):
+            result_text = result_text[3:-3]
+            
+        ai_orders = json.loads(result_text)
+        
+        final_orders = []
+        for order in ai_orders:
+            for mi in menu_items:
+                if mi['food_name'] == order.get('food_name'):
+                    final_orders.append({
+                        'food_name': mi['food_name'],
+                        'price': float(mi['price']),
+                        'category': mi['category'],
+                        'id': mi['id'],
+                        'qty': int(order.get('qty', 1))
+                    })
+                    break
+        
+        return jsonify({'status': 'success', 'orders': final_orders})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
